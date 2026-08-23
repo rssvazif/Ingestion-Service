@@ -31,8 +31,20 @@ export interface KnowledgeChunkMetadata {
   symbol?: string;
   /** Kind of the symbol (class/method/function/interface/...). */
   symbolType?: string;
-  /** Documentation-only: heading hierarchy. */
+  /** Parent symbol for nested members (e.g. method on a class). */
+  parentSymbol?: string;
+  /** Deterministic signature for the symbol, when extractable. */
+  signature?: string;
+  /** JSDoc comment directly attached to this symbol. */
+  jsdoc?: string;
+  /** Documentation-only: heading hierarchy (legacy field kept for compat). */
   section?: string[];
+  /** Documentation-only: heading hierarchy (explicit, replaces `section`). */
+  sectionPath?: string[];
+  /** Documentation-only: most specific heading title. */
+  sectionTitle?: string;
+  /** Documentation-only: parent chunk id (used for parent-child retrieval). */
+  parentId?: string;
   /** 1-based start line in the source file. */
   startLine?: number;
   /** 1-based end line in the source file. */
@@ -103,11 +115,21 @@ export function buildChunkId(parts: {
   file: string;
   symbol?: string;
   section?: string[];
+  sectionPath?: string[];
+  sectionTitle?: string;
+  parentSymbol?: string;
+  parentId?: string;
+  signature?: string;
   startLine?: number;
   endLine?: number;
 }): string {
   const symbolPart = parts.symbol ?? '';
   const sectionPart = parts.section ? parts.section.join(' > ') : '';
+  const sectionPathPart = parts.sectionPath ? parts.sectionPath.join(' > ') : '';
+  const parentSymbolPart = parts.parentSymbol ?? '';
+  const parentIdPart = parts.parentId ?? '';
+  const signaturePart = parts.signature ?? '';
+  const sectionTitlePart = parts.sectionTitle ?? '';
   const key = [
     parts.type,
     parts.repositoryId,
@@ -116,6 +138,11 @@ export function buildChunkId(parts: {
     parts.file,
     symbolPart,
     sectionPart,
+    sectionPathPart,
+    sectionTitlePart,
+    parentSymbolPart,
+    parentIdPart,
+    signaturePart,
     parts.startLine ?? '',
     parts.endLine ?? '',
   ].join('|');

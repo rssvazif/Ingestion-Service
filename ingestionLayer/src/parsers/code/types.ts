@@ -8,12 +8,21 @@ export interface CodeNode {
   name?: string;
   /** Source text of this node. */
   text: string;
+  /** Start line (1-based), inclusive of any leading JSDoc. */
   startLine: number;
+  /** End line (1-based). */
   endLine: number;
   startColumn: number;
   endColumn: number;
   /** Direct children useful for further inspection (functions, nested types). */
   children: CodeNode[];
+  /**
+   * JSDoc comment directly attached to this declaration, when present.
+   * Empty / undefined when no JSDoc precedes the declaration.
+   */
+  jsdoc?: string;
+  /** True when this declaration has an `export` modifier. */
+  exported?: boolean;
 }
 
 /** Result of parsing a source file. */
@@ -81,6 +90,27 @@ export function isStructuralNode(type: string): boolean {
     'enum_declaration',
     'lexical_declaration',
     'variable_declaration',
+    'variable_declarator',
+    'call_expression',
+    'arguments',
+    'member_expression',
+    'subscript_expression',
+    'object',
+    'array',
+    'assignment_expression',
+    'binary_expression',
+    'unary_expression',
+    'identifier',
+    'type_identifier',
+    'property_identifier',
+    'string',
+    'number',
+    'true',
+    'false',
+    'null',
+    'template_string',
+    'regex',
+    'new_expression',
     'export_statement',
     'export_specifier',
     'namespace_declaration',

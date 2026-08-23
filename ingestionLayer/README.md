@@ -147,7 +147,7 @@ src/
 ├── repository/                # RepositoryAdapter interface + GitLab impl
 ├── security/                  # Placeholder for SecurityScanner
 └── state/                     # IngestionState + JSON file-backed store
-tests/                         # Vitest suite (122 tests)
+tests/                         # Vitest suite (175 tests)
 ```
 
 ---
@@ -159,7 +159,7 @@ npm test                 # run once
 npm run test:watch       # watch mode
 ```
 
-- 122 unit tests across parsers, chunkers, classifier, GitLab adapter
+- 175 unit tests across parsers, chunkers, classifier, GitLab adapter
   (with mocked fetch), context injector, ingestion state, and end-to-end
   orchestrator scenarios (full / incremental / skipped / delete).
 - All tests are hermetic — no network calls.

@@ -11,6 +11,10 @@ export type ClassificationReason =
   | 'known_documentation_path'
   | 'unknown_extension'
   | 'ignored_directory'
+  | 'generated_directory'
+  | 'test_artifact'
+  | 'snapshot'
+  | 'log_file'
   | 'binary_file'
   | 'lock_file'
   | 'too_large'
@@ -36,6 +40,14 @@ export interface FileClassifierOptions {
   documentationDirectories?: string[];
   /** Whether to ignore lock files (package-lock.json, yarn.lock, etc.). */
   ignoreLockFiles?: boolean;
+  /** Override the set of directories classified as `generated_directory`. */
+  ignoreDirectories?: string[];
+  /** Override the set of patterns classified as `test_artifact`. */
+  testArtifactPatterns?: RegExp[];
+  /** Override the set of patterns classified as `snapshot`. */
+  snapshotPatterns?: RegExp[];
+  /** Override the set of patterns classified as `log_file`. */
+  logFilePatterns?: RegExp[];
 }
 
 /** Result of running classify() over an array of files. */

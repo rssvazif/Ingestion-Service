@@ -16,7 +16,7 @@ export interface CodeChunk {
   symbolType: CodeSymbolKind;
   /** Programming language of the source chunk. */
   language: string;
-  /** 1-based start line. */
+  /** 1-based start line (inclusive of JSDoc when attached). */
   startLine: number;
   /** 1-based end line. */
   endLine: number;
@@ -26,6 +26,12 @@ export interface CodeChunk {
   nodeType: string;
   /** Optional parent symbol for nested members (e.g. class name for methods). */
   parentSymbol?: string;
+  /** Deterministic signature extracted from the source. */
+  signature?: string;
+  /** JSDoc comment directly attached to this symbol, when present. */
+  jsdoc?: string;
+  /** Whether this declaration is exported from its module. */
+  exported?: boolean;
 }
 
 export interface CodeChunkerOptions {
@@ -35,4 +41,17 @@ export interface CodeChunkerOptions {
   includeLexicalDeclarations?: boolean;
   /** Include interface / type-alias members as separate chunks. */
   includeInterfaceMembers?: boolean;
+  /**
+   * When true (default) the chunker drops trivial lexical declarations
+   * (require() calls, plain local values, simple assignments). Only
+   * semantic declarations (exported, object/array literals, config-style
+   * factory calls) are kept.
+   */
+  includeSemanticDeclarationsOnly?: boolean;
+  /**
+   * When true (default) the chunker prepends a compact context block to
+   * the chunk content: parent symbol, signature, JSDoc. This improves the
+   * signal sent to the embedding model.
+   */
+  includeSemanticContextInContent?: boolean;
 }

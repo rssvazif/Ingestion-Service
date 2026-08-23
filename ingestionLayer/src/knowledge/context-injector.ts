@@ -35,6 +35,9 @@ export class ContextInjector {
         language: c.language,
         symbol: c.symbol,
         symbolType: c.symbolType,
+        parentSymbol: c.parentSymbol,
+        signature: c.signature,
+        jsdoc: c.jsdoc,
         startLine: c.startLine,
         endLine: c.endLine,
         ...(ctx.changeType ? { changeType: ctx.changeType } : {}),
@@ -47,6 +50,8 @@ export class ContextInjector {
           commit: ctx.revision.commit,
           file: ctx.file,
           symbol: c.symbol,
+          parentSymbol: c.parentSymbol,
+          signature: c.signature,
           startLine: c.startLine,
           endLine: c.endLine,
         }),
@@ -62,30 +67,42 @@ export class ContextInjector {
     ctx: DocumentationInjectionContext
   ): KnowledgeChunk[] {
     const base = this.baseMetadata(ctx);
-    return chunks.map((c): KnowledgeChunk => {
+    // First pass: generate an id for every chunk and build a lookup so
+    // children can resolve their parent index to the parent's chunk id.
+    const ids = chunks.map((c) =>
+      buildChunkId({
+        type: 'documentation',
+        repositoryId: ctx.repositoryId,
+        branch: ctx.revision.branch,
+        commit: ctx.revision.commit,
+        file: ctx.file,
+        symbol: c.title,
+        sectionPath: c.sectionPath,
+        sectionTitle: c.title,
+        parentId: c.parentId,
+        startLine: c.startLine,
+        endLine: c.endLine,
+      })
+    );
+    return chunks.map((c, index): KnowledgeChunk => {
+      const parentId =
+        c.parentIndex !== undefined ? ids[c.parentIndex] : undefined;
       const meta: KnowledgeChunkMetadata = {
         ...base,
         language: ctx.language ?? 'markdown',
         symbol: c.title,
-        symbolType: 'section',
-        section: c.section,
+        symbolType: c.kind === 'parent' ? 'section_parent' : 'section_child',
+        section: c.sectionPath,
+        sectionPath: c.sectionPath,
+        sectionTitle: c.title,
+        parentId,
         startLine: c.startLine,
         endLine: c.endLine,
         split: c.split,
         ...(ctx.changeType ? { changeType: ctx.changeType } : {}),
       };
       return {
-        id: buildChunkId({
-          type: 'documentation',
-          repositoryId: ctx.repositoryId,
-          branch: ctx.revision.branch,
-          commit: ctx.revision.commit,
-          file: ctx.file,
-          symbol: c.title,
-          section: c.section,
-          startLine: c.startLine,
-          endLine: c.endLine,
-        }),
+        id: ids[index]!,
         type: 'documentation',
         content: c.content,
         metadata: meta,

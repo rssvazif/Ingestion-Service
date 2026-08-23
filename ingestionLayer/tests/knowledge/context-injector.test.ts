@@ -167,7 +167,9 @@ describe('ContextInjector - documentation chunks', () => {
 
   it('converts a documentation chunk to a KnowledgeChunk', () => {
     const doc: DocumentationChunk = {
+      kind: 'parent',
       section: ['Authentication', 'Login'],
+      sectionPath: ['Authentication', 'Login'],
       title: 'Login',
       depth: 2,
       startLine: 10,
@@ -184,13 +186,54 @@ describe('ContextInjector - documentation chunks', () => {
     };
     const [chunk] = injector.injectDocumentation([doc], ctx);
     expect(chunk.type).toBe('documentation');
-    expect(chunk.metadata.section).toEqual(['Authentication', 'Login']);
+    expect(chunk.metadata.sectionPath).toEqual(['Authentication', 'Login']);
+    expect(chunk.metadata.sectionTitle).toBe('Login');
     expect(chunk.metadata.symbol).toBe('Login');
-    expect(chunk.metadata.symbolType).toBe('section');
+    expect(chunk.metadata.symbolType).toBe('section_parent');
     expect(chunk.metadata.startLine).toBe(10);
     expect(chunk.metadata.endLine).toBe(40);
     expect(chunk.metadata.file).toBe('docs/authentication.md');
     expect(chunk.content).toContain('Login flow');
+  });
+
+  it('links a child chunk to its parent via parentId', () => {
+    const parent: DocumentationChunk = {
+      kind: 'parent',
+      section: ['Authentication'],
+      sectionPath: ['Authentication'],
+      title: 'Authentication',
+      depth: 1,
+      startLine: 1,
+      endLine: 50,
+      content: '# Authentication ...',
+      split: false,
+    };
+    const child: DocumentationChunk = {
+      kind: 'child',
+      parentIndex: 0,
+      section: ['Authentication', 'Login'],
+      sectionPath: ['Authentication', 'Login'],
+      title: 'Login',
+      depth: 2,
+      startLine: 10,
+      endLine: 40,
+      content: '## Login ...',
+      split: false,
+    };
+    const ctx: DocumentationInjectionContext = {
+      file: 'docs/authentication.md',
+      repositoryId: 'group%2FpartServiceFileStorage',
+      repository: 'partServiceFileStorage',
+      service: 'FileStorage',
+      revision,
+    };
+    const out = injector.injectDocumentation([parent, child], ctx);
+    expect(out).toHaveLength(2);
+    expect(out[0]!.metadata.symbolType).toBe('section_parent');
+    expect(out[0]!.metadata.parentId).toBeUndefined();
+    expect(out[1]!.metadata.symbolType).toBe('section_child');
+    expect(out[1]!.metadata.parentId).toBe(out[0]!.id);
+    expect(out[1]!.metadata.sectionPath).toEqual(['Authentication', 'Login']);
   });
 });
 

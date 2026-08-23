@@ -9,89 +9,304 @@ function chunks(src: string, path: string, opts?: ConstructorParameters<typeof C
   return new CodeChunker(opts).chunk(parsed);
 }
 
-describe('CodeChunker - class extraction', () => {
-  it('produces a class chunk and one chunk per method', () => {
-    const src = `export class UserService {
-  async findUser(id: string): Promise<User> {
-    return this.repo.find(id);
-  }
-
-  async addUser(input: NewUser): Promise<User> {
-    return this.repo.save(input);
+describe('CodeChunker - JSDoc attachment', () => {
+  it('attaches a JSDoc block to a method without duplicating the chunk', () => {
+    const src = `class UserRepo {
+  /**
+   * Creates a user.
+   * @param username User username
+   */
+  async createUser(username) {
+    return save(username);
   }
 }
 `;
-    const out = chunks(src, 'src/services/user.service.ts');
-    const classChunk = out.find((c) => c.symbolType === 'class');
-    expect(classChunk?.symbol).toBe('UserService');
-    expect(classChunk?.content).toContain('class UserService');
-    const methods = out.filter((c) => c.symbolType === 'method');
-    expect(methods.map((m) => m.symbol).sort()).toEqual([
-      'UserService.addUser',
-      'UserService.findUser',
-    ]);
-    expect(methods[0]?.parentSymbol).toBe('UserService');
+    const out = chunks(src, 'src/user.ts');
+    const method = out.find((c) => c.symbolType === 'method');
+    expect(method).toBeDefined();
+    expect(out.filter((c) => c.symbolType === 'method')).toHaveLength(1);
+    expect(method?.jsdoc).toContain('Creates a user');
+    expect(method?.content).toContain('async createUser');
   });
 
-  it('preserves the actual source content for each method', () => {
-    const src = `export class A {
-  hello() {
-    return 'hi';
-  }
+  it('attaches JSDoc to a function declaration', () => {
+    const src = `/**
+ * Creates a payment.
+ */
+function createPayment() {
+  return 1;
+}
+`;
+    const out = chunks(src, 'src/pay.ts');
+    const fn = out.find((c) => c.symbolType === 'function');
+    expect(fn?.jsdoc).toContain('Creates a payment');
+    expect(fn?.content).toContain('function createPayment');
+  });
+
+  it('attaches JSDoc to a class declaration', () => {
+    const src = `/**
+ * Handles user operations.
+ */
+class UserService {
+  greet() { return 'hi'; }
+}
+`;
+    const out = chunks(src, 'src/user.service.ts');
+    const cls = out.find((c) => c.symbolType === 'class');
+    expect(cls?.jsdoc).toContain('Handles user operations');
+  });
+
+  it('does not attach an unrelated comment to the next declaration', () => {
+    const src = `// some unrelated comment
+const x = 1;
+
+/**
+ * This is for foo.
+ */
+function foo() { return 2; }
+`;
+    const out = chunks(src, 'src/a.ts');
+    const fn = out.find((c) => c.symbolType === 'function');
+    expect(fn?.jsdoc).toContain('This is for foo');
+  });
+
+  it('leaves a method without JSDoc with no jsdoc field', () => {
+    const src = `async createUser(username) {
+  return save(username);
+}
+`;
+    const out = chunks(src, 'src/user.ts');
+    const method = out.find((c) => c.symbolType === 'method');
+    expect(method?.jsdoc).toBeUndefined();
+  });
+
+  it('startLine includes JSDoc when JSDoc is directly attached', () => {
+    const src = `class A {
+  /**
+   * Hello
+   */
+  foo() { return 1; }
 }
 `;
     const out = chunks(src, 'src/a.ts');
     const m = out.find((c) => c.symbolType === 'method');
-    expect(m?.content).toContain('return');
-    expect(m?.content).toContain("'hi'");
-    expect(m?.content).toContain('hello');
+    // class A { at line 1
+    // / at line 2
+    // * at line 3
+    // * Hello at line 4
+    // */ at line 5
+    // foo at line 6
+    expect(m?.startLine).toBeLessThanOrEqual(5);
   });
 });
 
-describe('CodeChunker - functions & variables', () => {
-  it('extracts top-level function declarations', () => {
-    const src = `export function greet(name: string): string {
-  return 'Hello ' + name;
+describe('CodeChunker - signature extraction', () => {
+  it('extracts a class signature', () => {
+    const src = `class PaymentService {
+  pay() { return 1; }
 }
 `;
-    const out = chunks(src, 'src/greet.ts');
-    expect(out[0]?.symbol).toBe('greet');
-    expect(out[0]?.symbolType).toBe('function');
-    expect(out[0]?.language).toBe('ts');
+    const out = chunks(src, 'src/p.ts');
+    const cls = out.find((c) => c.symbolType === 'class');
+    expect(cls?.signature).toContain('class PaymentService');
+    expect(cls?.signature).not.toContain('return');
   });
 
-  it('extracts lexical declarations (export const)', () => {
-    const src = `export const DEFAULT_PORT = 8080;\n`;
-    const out = chunks(src, 'src/config.ts');
-    expect(out[0]?.symbol).toBe('DEFAULT_PORT');
-    expect(out[0]?.symbolType).toBe('variable');
-    expect(out[0]?.content).toContain('8080');
+  it('extracts a method signature (without body)', () => {
+    const src = `class Calc {
+  add(a: number, b: number): number {
+    const r = a + b;
+    return r;
+  }
+}
+`;
+    const out = chunks(src, 'src/calc.ts');
+    const m = out.find((c) => c.symbolType === 'method');
+    expect(m?.signature).toContain('add');
+    expect(m?.signature).toContain('a: number');
+    expect(m?.signature).toContain('b: number');
+    expect(m?.signature).toContain('number');
+    expect(m?.signature).not.toContain('const r');
+    expect(m?.signature).not.toContain('return r');
   });
 
-  it('extracts type aliases', () => {
-    const src = `export type Nullable<T> = T | null;\n`;
-    const out = chunks(src, 'src/types/util.ts');
-    expect(out[0]?.symbol).toBe('Nullable');
-    expect(out[0]?.symbolType).toBe('type');
-    expect(out[0]?.content).toContain('T | null');
+  it('extracts an async function signature', () => {
+    const src = `async function createPayment(req: PaymentRequest): Promise<PaymentResponse> {
+  return doSomething(req);
+}
+`;
+    const out = chunks(src, 'src/pay.ts');
+    const fn = out.find((c) => c.symbolType === 'function');
+    expect(fn?.signature).toContain('async function createPayment');
+    expect(fn?.signature).toContain('Promise<PaymentResponse>');
+    expect(fn?.signature).not.toContain('return doSomething');
   });
 
-  it('extracts interfaces', () => {
-    const src = `export interface User {
+  it('extracts an interface signature', () => {
+    const src = `interface User {
   id: string;
   name: string;
 }
 `;
-    const out = chunks(src, 'src/types/user.ts');
-    expect(out[0]?.symbol).toBe('User');
-    expect(out[0]?.symbolType).toBe('interface');
+    const out = chunks(src, 'src/u.ts');
+    const i = out.find((c) => c.symbolType === 'interface');
+    expect(i?.signature).toContain('interface User');
+    expect(i?.signature).not.toContain('id: string');
   });
 
-  it('extracts enums', () => {
-    const src = `export enum Role {\n  Admin = 'admin'\n}\n`;
-    const out = chunks(src, 'src/types/role.ts');
-    expect(out[0]?.symbol).toBe('Role');
-    expect(out[0]?.symbolType).toBe('enum');
+  it('extracts a type alias signature', () => {
+    const src = `type PaymentStatus = 'pending' | 'settled' | 'reverted';
+`;
+    const out = chunks(src, 'src/types.ts');
+    const t = out.find((c) => c.symbolType === 'type');
+    expect(t?.signature).toContain('type PaymentStatus');
+    expect(t?.signature).not.toContain("'settled'");
+  });
+
+  it('extracts an enum signature', () => {
+    const src = `enum Role {
+  Admin = 'admin',
+  User = 'user'
+}
+`;
+    const out = chunks(src, 'src/role.ts');
+    const e = out.find((c) => c.symbolType === 'enum');
+    expect(e?.signature).toContain('enum Role');
+    expect(e?.signature).not.toContain('Admin');
+  });
+});
+
+describe('CodeChunker - trivial lexical declaration filtering', () => {
+  it('skips require() calls', () => {
+    const src = `const express = require("express");\n`;
+    const out = chunks(src, 'src/app.ts');
+    expect(out).toHaveLength(0);
+  });
+
+  it('skips plain local value assignments', () => {
+    const src = `const localValue = foo();
+`;
+    const out = chunks(src, 'src/a.ts');
+    expect(out).toHaveLength(0);
+  });
+
+  it('skips simple assignments and local helpers', () => {
+    const src = `let count = 0;
+const helper = (a, b) => a + b;
+`;
+    const out = chunks(src, 'src/a.ts');
+    expect(out).toHaveLength(0);
+  });
+
+  it('keeps exported object literals (configuration)', () => {
+    const src = `export const PAYMENT_STATUS = {
+  PENDING: 'pending',
+  SETTLED: 'settled',
+  REVERTED: 'reverted'
+};
+`;
+    const out = chunks(src, 'src/status.ts');
+    expect(out).toHaveLength(1);
+    expect(out[0]?.symbol).toBe('PAYMENT_STATUS');
+    expect(out[0]?.exported).toBe(true);
+  });
+
+  it('keeps exported array literals (enum-like constants)', () => {
+    const src = `export const VALID_LOCALES = ['en', 'fa', 'ar'];
+`;
+    const out = chunks(src, 'src/locales.ts');
+    expect(out).toHaveLength(1);
+    expect(out[0]?.symbol).toBe('VALID_LOCALES');
+  });
+
+  it('keeps defineConfig-style factory calls even when not exported', () => {
+    const src = `const cfg = defineConfig({ port: 8080 });
+`;
+    const out = chunks(src, 'src/a.ts');
+    expect(out).toHaveLength(1);
+    expect(out[0]?.symbol).toBe('cfg');
+  });
+
+  it('does not skip when includeSemanticDeclarationsOnly=false', () => {
+    const src = `const x = 1;
+const y = 2;
+`;
+    const out = chunks(src, 'src/a.ts', { includeSemanticDeclarationsOnly: false });
+    expect(out).toHaveLength(2);
+  });
+});
+
+describe('CodeChunker - parentSymbol metadata', () => {
+  it('sets parentSymbol on every method of a class', () => {
+    const src = `class Calc {
+  add(a, b) { return a + b; }
+  sub(a, b) { return a - b; }
+}
+`;
+    const out = chunks(src, 'src/c.ts');
+    const methods = out.filter((c) => c.symbolType === 'method');
+    for (const m of methods) {
+      expect(m.parentSymbol).toBe('Calc');
+    }
+  });
+
+  it('does not set parentSymbol on the class chunk itself', () => {
+    const src = `class A {}
+`;
+    const out = chunks(src, 'src/a.ts');
+    const cls = out.find((c) => c.symbolType === 'class');
+    expect(cls?.parentSymbol).toBeUndefined();
+  });
+
+  it('exposes exported flag on exported declarations', () => {
+    const src = `export class Foo {}
+export function bar() {}
+`;
+    const out = chunks(src, 'src/a.ts');
+    expect(out.find((c) => c.symbolType === 'class')?.exported).toBe(true);
+    expect(out.find((c) => c.symbolType === 'function')?.exported).toBe(true);
+  });
+});
+
+describe('CodeChunker - semantic content composition', () => {
+  it('injects a Parent/Signature block into method content by default', () => {
+    const src = `class Svc {
+  async run(x: number): Promise<void> {
+    return;
+  }
+}
+`;
+    const out = chunks(src, 'src/svc.ts');
+    const m = out.find((c) => c.symbolType === 'method');
+    expect(m?.content).toContain('Parent: Svc');
+    expect(m?.content).toContain('Method: Svc.run');
+    expect(m?.content).toContain('Signature:');
+    expect(m?.content).toContain('async run(x: number)');
+  });
+
+  it('does NOT inject semantic context when includeSemanticContextInContent=false', () => {
+    const src = `class Svc {
+  async run() {}
+}
+`;
+    const out = chunks(src, 'src/svc.ts', { includeSemanticContextInContent: false });
+    const m = out.find((c) => c.symbolType === 'method');
+    expect(m?.content).not.toContain('Parent: Svc');
+    expect(m?.content).toContain('async run');
+  });
+
+  it('includes JSDoc in the chunk content header', () => {
+    const src = `/**
+ * Builds a user.
+ */
+class UserBuilder {
+  build() { return new User(); }
+}
+`;
+    const out = chunks(src, 'src/u.ts');
+    const cls = out.find((c) => c.symbolType === 'class');
+    expect(cls?.content).toContain('Builds a user');
+    expect(cls?.content).toContain('class UserBuilder');
   });
 });
 

@@ -133,6 +133,8 @@ function collectTopLevel(root: Parser.SyntaxNode, source: string): CodeNode[] {
       const inner = unwrapExport(c);
       if (inner) {
         const built = treeSitterToCodeNode(inner, source);
+        attachJsDoc(built, inner, source);
+        attachExportedFlag(built, inner, true);
         attachMethods(built, inner, source);
         out.push(built);
       }
@@ -140,6 +142,7 @@ function collectTopLevel(root: Parser.SyntaxNode, source: string): CodeNode[] {
     }
     if (TOP_LEVEL_DECLARATION_TYPES.has(c.type)) {
       const built = treeSitterToCodeNode(c, source);
+      attachJsDoc(built, c, source);
       attachMethods(built, c, source);
       out.push(built);
     }
@@ -157,9 +160,41 @@ function attachMethods(classNode: CodeNode, rawNode: Parser.SyntaxNode, source: 
     const c = body.child(i);
     if (!c) continue;
     if (c.type === 'method_definition' || c.type === 'method_signature' || c.type === 'public_field_definition' || c.type === 'abstract_method_signature') {
-      classNode.children.push(treeSitterToCodeNode(c, source));
+      const childNode = treeSitterToCodeNode(c, source);
+      attachJsDoc(childNode, c, source);
+      classNode.children.push(childNode);
     }
   }
+}
+
+/**
+ * Attach the JSDoc comment that directly precedes a declaration to its
+ * CodeNode. Walks the previous-sibling chain and collects consecutive
+ * comment nodes. The first non-comment sibling (or end of chain) ends the
+ * collection, so unrelated comments are never attached.
+ */
+function attachJsDoc(node: CodeNode, rawNode: Parser.SyntaxNode, source: string): void {
+  const collected: string[] = [];
+  let prev = rawNode.previousSibling;
+  while (prev && prev.type === 'comment') {
+    const text = source.slice(prev.startIndex, prev.endIndex);
+    collected.unshift(text);
+    prev = prev.previousSibling;
+  }
+  if (collected.length === 0) return;
+  const joined = collected.join('\n');
+  // Only attach block comments that look like JSDoc (/** ... */).
+  if (!joined.includes('/**')) return;
+  node.jsdoc = joined;
+  // Extend the startLine to include the JSDoc, when it is directly above.
+  const jsDocStartLine = rawNode.startPosition.row - collected.length + 1;
+  if (jsDocStartLine > 0 && jsDocStartLine < node.startLine) {
+    node.startLine = jsDocStartLine;
+  }
+}
+
+function attachExportedFlag(node: CodeNode, rawNode: Parser.SyntaxNode, value: boolean): void {
+  node.exported = value;
 }
 
 function unwrapExport(exportNode: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
