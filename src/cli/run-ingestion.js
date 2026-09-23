@@ -1,7 +1,7 @@
-import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../logger/index.js';
+import { writeChunksToJson } from '../output/chunk-output.js';
 import { GitLabRepositoryAdapter } from '../repository/gitlab-adapter.js';
 import { FileClassifier } from '../discovery/file-classifier.js';
 import { FileDiscovery } from '../discovery/file-discovery.js';
@@ -149,11 +149,7 @@ export async function runCli(argv = process.argv) {
 
   if (args.output) {
     const outPath = resolve(args.output);
-    writeFileSync(outPath, JSON.stringify(result.chunks, null, 2), 'utf8');
-    log.info('KnowledgeChunks written to disk', {
-      path: outPath,
-      count: result.chunks.length,
-    });
+    writeChunksToJson({ path: outPath, chunks: result.chunks, log });
     process.stdout.write(`\nWrote ${result.chunks.length} chunk(s) to ${outPath}\n`);
   }
 

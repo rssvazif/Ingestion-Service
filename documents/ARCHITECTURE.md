@@ -217,6 +217,22 @@ Every chunk carries:
 a `delete` chunk per deleted file with the same id scheme, so a future
 vector layer can reconcile by id.
 
+### `output/`
+
+Shared `KnowledgeChunk` JSON export used by both the CLI (`--output`) and the
+BullMQ worker (`INGESTION_OUTPUT_DIR`):
+
+- `resolveChunkOutputPath(output, jobId)` — resolves the destination path
+  (`<dir>/<file>` when `INGESTION_OUTPUT_FILE` is set, otherwise
+  `<dir>/<jobId>.json`, with the job id sanitized for the file system).
+  Returns `null` when chunk output is disabled.
+- `writeChunksToJson({ path, chunks, log })` — writes the chunk array as
+  pretty-printed JSON, creating missing directories and using an atomic
+  temp-file + rename so a crash mid-write never leaves a truncated export.
+
+The worker only exports chunks for `mode !== 'skipped'` runs; a skipped run
+means nothing changed, so no file is produced or overwritten.
+
 ### `state/`
 
 `IngestionState` is the abstraction. It records:
@@ -290,6 +306,7 @@ The token is **never** logged or printed.
 | More languages          | Add a grammar to `TreeSitterCodeParser` and extend `CODE_EXTENSIONS`.    |
 | Better binary detection | Pass a custom `BinaryDetector` to `FileClassifier`.                      |
 | Vector store            | Subscribe to `chunks: KnowledgeChunk[]` in the orchestrator.             |
+| Chunk export            | Point `INGESTION_OUTPUT_DIR` at a directory; the worker writes JSON per job.|
 | Multi-process safety    | Replace `FileIngestionStateStore` with a DB-backed `IngestionStateStore`.|
 | Embedding               | Run after the orchestrator returns; the chunk shape is stable.           |
 

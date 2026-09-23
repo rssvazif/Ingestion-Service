@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 import {
-  GITLAB_DELIVERY_UUID_HEADER,
-  GITLAB_EVENT_UUID_HEADER,
+  INGESTION_DELIVERY_UUID_HEADER,
+  INGESTION_EVENT_UUID_HEADER,
   buildEnqueueOptions,
   buildJobPayload,
   deriveJobId,
@@ -68,14 +68,14 @@ describe('deriveJobId', () => {
 });
 
 describe('eventIdFromHeaders', () => {
-  it('reads the X-Gitlab-Event-UUID header', () => {
-    expect(eventIdFromHeaders({ [GITLAB_EVENT_UUID_HEADER]: 'uuid-1' })).toBe('uuid-1');
+  it('reads the ingestion-event-uuid header', () => {
+    expect(eventIdFromHeaders({ [INGESTION_EVENT_UUID_HEADER]: 'uuid-1' })).toBe('uuid-1');
   });
 
-  it('falls back to X-Gitlab-Delivery-UUID', () => {
+  it('falls back to ingestion-delivery-uuid', () => {
     expect(
       eventIdFromHeaders({
-        'x-gitlab-delivery-uuid': 'uuid-2',
+        'ingestion-delivery-uuid': 'uuid-2',
       }),
     ).toBe('uuid-2');
   });
@@ -83,14 +83,14 @@ describe('eventIdFromHeaders', () => {
   it('prefers the event uuid header over the delivery header', () => {
     expect(
       eventIdFromHeaders({
-        [GITLAB_EVENT_UUID_HEADER]: 'event-uuid',
-        [GITLAB_DELIVERY_UUID_HEADER]: 'delivery-uuid',
+        [INGESTION_EVENT_UUID_HEADER]: 'event-uuid',
+        [INGESTION_DELIVERY_UUID_HEADER]: 'delivery-uuid',
       }),
     ).toBe('event-uuid');
   });
 
   it('handles array header values and missing headers', () => {
-    expect(eventIdFromHeaders({ [GITLAB_EVENT_UUID_HEADER]: ['a', 'b'] })).toBe('a');
+    expect(eventIdFromHeaders({ [INGESTION_EVENT_UUID_HEADER]: ['a', 'b'] })).toBe('a');
     expect(eventIdFromHeaders({})).toBeUndefined();
   });
 });

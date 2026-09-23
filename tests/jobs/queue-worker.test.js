@@ -1,6 +1,9 @@
 import { describe, it, expect, afterAll, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import {
@@ -513,6 +516,76 @@ describe.skipIf(!hasRedis)('BullMQ ingestion queue + worker', () => {
     } finally {
       await closeWorker(worker);
       await closeQueue(queue);
+    }
+  });
+
+  it('persists the job chunks to a JSON file when chunk output is configured', async () => {
+    const config = makeConfig();
+    config.jobs.queueName = uniqueQueueName();
+    config.redisUrl = redisInfo.url;
+    const outDir = mkdtempSync(join(tmpdir(), 'worker-chunks-'));
+    config.output = { dir: outDir };
+
+    const expectedChunks = [
+      { id: 'c1', type: 'code', content: 'x', metadata: { file: 'a.ts' } },
+    ];
+    const run = vi.fn(async () => ({ ...stubResult(), chunks: expectedChunks }));
+    const queue = createIngestionQueue(config);
+    const worker = createIngestionWorker({
+      config,
+      log: silentLogger,
+      buildOrchestrator: async () => ({ run }),
+    });
+
+    try {
+      const completed = onCompletions(worker, 1);
+      const job = await queue.add(
+        INGESTION_JOB_NAME,
+        { projectId: '449' },
+        buildEnqueueOptions(config),
+      );
+      await completed;
+
+      expect(job.id).toBeTypeOf('string');
+      const written = readFileSync(join(outDir, `${job.id}.json`), 'utf8');
+      expect(JSON.parse(written)).toEqual(expectedChunks);
+    } finally {
+      await closeWorker(worker);
+      await closeQueue(queue);
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not write a JSON file for a skipped run, even when output is configured', async () => {
+    const config = makeConfig();
+    config.jobs.queueName = uniqueQueueName();
+    config.redisUrl = redisInfo.url;
+    const outDir = mkdtempSync(join(tmpdir(), 'worker-chunks-'));
+    config.output = { dir: outDir };
+
+    const run = vi.fn(async () => ({ ...stubResult(), mode: 'skipped', chunks: [] }));
+    const queue = createIngestionQueue(config);
+    const worker = createIngestionWorker({
+      config,
+      log: silentLogger,
+      buildOrchestrator: async () => ({ run }),
+    });
+
+    try {
+      const completed = onCompletions(worker, 1);
+      const job = await queue.add(
+        INGESTION_JOB_NAME,
+        { projectId: '449' },
+        buildEnqueueOptions(config),
+      );
+      await completed;
+
+      expect(job.id).toBeTypeOf('string');
+      expect(existsSync(join(outDir, `${job.id}.json`))).toBe(false);
+    } finally {
+      await closeWorker(worker);
+      await closeQueue(queue);
+      rmSync(outDir, { recursive: true, force: true });
     }
   });
 });

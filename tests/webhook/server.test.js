@@ -135,32 +135,36 @@ describe('webhook server', () => {
     expect(res.status).toBe(404);
   });
 
-  it('rejects requests with the wrong X-Gitlab-Event with 400', async () => {
-    server = await startWith();
-    const res = await send(server.port, {
-      method: 'POST',
-      path: '/ingest',
-      headers: {
-        'content-type': 'application/json',
-        'x-gitlab-event': 'Push Hook',
-      },
-      body: JSON.stringify(makePayload()),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects requests with an invalid shared secret with 401', async () => {
+  it('rejects requests with an invalid ingestion-token with 401 when a secret is configured', async () => {
     server = await startWith({ secret: 'topsecret' });
     const res = await send(server.port, {
       method: 'POST',
       path: '/ingest',
       headers: {
         'content-type': 'application/json',
-        'x-gitlab-event': 'Merge Request Hook',
+        'ingestion-token': 'wrong-secret',
       },
       body: JSON.stringify(makePayload()),
     });
     expect(res.status).toBe(401);
+  });
+
+  it('accepts requests carrying the matching ingestion-token', async () => {
+    const queue = makeQueue();
+    server = await startWith({ secret: 'topsecret', queue });
+
+    const res = await send(server.port, {
+      method: 'POST',
+      path: '/ingest',
+      headers: {
+        'content-type': 'application/json',
+        'ingestion-token': 'topsecret',
+      },
+      body: JSON.stringify(makePayload()),
+    });
+
+    expect(res.status).toBe(202);
+    expect(queue.add).toHaveBeenCalledTimes(1);
   });
 
   it('accepts a minimal payload with 202 and enqueues a job', async () => {
@@ -172,7 +176,6 @@ describe('webhook server', () => {
       path: '/ingest',
       headers: {
         'content-type': 'application/json',
-        'x-gitlab-event': 'Merge Request Hook',
       },
       body: JSON.stringify(makePayload()),
     });
@@ -212,7 +215,6 @@ describe('webhook server', () => {
       path: '/ingest',
       headers: {
         'content-type': 'application/json',
-        'x-gitlab-event': 'Merge Request Hook',
       },
       body: JSON.stringify(makePayload({ project: { id: 999 } })),
     });
@@ -228,7 +230,6 @@ describe('webhook server', () => {
       path: '/ingest',
       headers: {
         'content-type': 'application/json',
-        'x-gitlab-event': 'Merge Request Hook',
       },
       body: JSON.stringify(
         makePayload({
@@ -239,14 +240,13 @@ describe('webhook server', () => {
     expect(res.status).toBe(202);
   });
 
-  it('uses the X-Gitlab-Event-UUID as a deterministic jobId for deduplication', async () => {
+  it('uses the ingestion-event-uuid as a deterministic jobId for deduplication', async () => {
     const queue = makeQueue();
     server = await startWith({ queue });
 
     const headers = {
       'content-type': 'application/json',
-      'x-gitlab-event': 'Merge Request Hook',
-      'x-gitlab-event-uuid': '5f6d3c2a-0000-4a00-8000-000000000001',
+      'ingestion-event-uuid': '5f6d3c2a-0000-4a00-8000-000000000001',
     };
     const body = () => JSON.stringify(makePayload());
 
@@ -280,7 +280,6 @@ describe('webhook server', () => {
       path: '/ingest',
       headers: {
         'content-type': 'application/json',
-        'x-gitlab-event': 'Merge Request Hook',
       },
       body: 'not-json',
     });
@@ -294,7 +293,6 @@ describe('webhook server', () => {
       path: '/ingest',
       headers: {
         'content-type': 'application/json',
-        'x-gitlab-event': 'Merge Request Hook',
       },
       body: JSON.stringify({ object_kind: 'push' }),
     });
@@ -314,7 +312,6 @@ describe('webhook server', () => {
       path: '/ingest',
       headers: {
         'content-type': 'application/json',
-        'x-gitlab-event': 'Merge Request Hook',
       },
       body: JSON.stringify(makePayload()),
     });

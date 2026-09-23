@@ -43,6 +43,9 @@ Type information is documented inline via JSDoc (`@typedef`, `@param`,
 - **Ingestion orchestrator** that wires every layer together and supports
   full ingestion, incremental ingestion (via GitLab compare), and a
   smart `run()` that picks the right mode automatically.
+- **Chunk JSON export** — the BullMQ worker can persist each job's
+  `KnowledgeChunk[]` to a pretty-printed JSON file (`INGESTION_OUTPUT_DIR`),
+  reusing the same atomic writer as the CLI's `--output` flag.
 - **BullMQ job queue** (Redis-backed) that decouples the GitLab webhook HTTP
   request from the ingestion pipeline: the webhook enqueues a job and returns
   `202 Accepted` immediately, and a separate worker process runs the pipeline
@@ -109,10 +112,12 @@ Stats:
 | `INGESTION_CHUNK_SIZE`      | No       | Reserved for future use (defaults to `1500`).                            |
 | `INGESTION_CHUNK_OVERLAP`   | No       | Reserved for future use (defaults to `150`).                             |
 | `INGESTION_STATE_FILE`      | No       | Defaults to `./.ingestion-state.json`.                                   |
+| `INGESTION_OUTPUT_DIR`      | No       | When set, the worker persists each job's `KnowledgeChunk[]` as pretty-printed JSON into this directory (one `<jobId>.json` per job). Disabled unless set. |
+| `INGESTION_OUTPUT_FILE`     | No       | Optional fixed file name used for every job inside `INGESTION_OUTPUT_DIR`. Defaults to per-job `<jobId>.json`. |
 | `LOG_LEVEL`                 | No       | `debug` \| `info` \| `warn` \| `error` \| `silent`. Defaults to `info`. |
 | `INGESTION_WEBHOOK_PORT`    | No       | HTTP port for the webhook receiver (defaults to `3000`).              |
 | `INGESTION_WEBHOOK_PATH`    | No       | URL path the receiver listens on (defaults to `/ingest`).              |
-| `INGESTION_WEBHOOK_SECRET`  | No       | When set, validates `X-Gitlab-Token` on every request.                |
+| `INGESTION_WEBHOOK_SECRET`  | No       | When set, validates the `ingestion-token` header on every request.     |
 | `REDIS_URL`                 | No       | Redis connection string for the BullMQ queue (defaults to `redis://127.0.0.1:6379`). |
 | `REDIS_DB`                  | No       | Redis logical database index (`0..15`) for the queue keys (defaults to `0`).  |
 | `INGESTION_QUEUE_NAME`      | No       | Queue name (defaults to `ingestion`).                                 |
@@ -165,11 +170,10 @@ ingestion pipeline. A worker process (`npm run ingestion:worker`) pulls jobs
 from the queue and runs the existing ingestion pipeline with bounded
 concurrency (`INGESTION_WORKER_CONCURRENCY`, default `3`).
 
-| Header                    | Required | Purpose                                            |
-| ------------------------- | -------- | -------------------------------------------------- |
-| `X-Gitlab-Event`          | Yes      | Must be `Merge Request Hook`.                      |
-| `X-Gitlab-Token`          | If secret configured | Shared secret.                       |
-| `X-Gitlab-Event-UUID`     | No       | GitLab delivery id. Used as the deterministic job id for deduplication. |
+| Header                 | Required | Purpose                                                                     |
+| ---------------------- | -------- | --------------------------------------------------------------------------- |
+| `ingestion-token`         | If secret configured | Shared secret (`INGESTION_WEBHOOK_SECRET`).                        |
+| `ingestion-event-uuid`    | No       | Caller-supplied delivery id. Used as the deterministic job id for deduplication. |
 
 Accepted values: any payload with `object_kind: "merge_request"` and a
 non-empty `project.id`. The job payload carries the parsed `projectId` /
@@ -188,7 +192,7 @@ current HEAD of that branch (no commit pinning).
 - **Failed jobs** remain in Redis (up to `INGESTION_JOB_REMOVE_ON_FAIL`, default
   `5000`) for investigation/reprocessing. Completed jobs are also bounded
   (`INGESTION_JOB_REMOVE_ON_COMPLETE`, default `1000`).
-- **Deduplication** – when GitLab supplies `X-Gitlab-Event-UUID`, the delivery id
+- **Deduplication** – when the caller supplies `ingestion-event-uuid`, the delivery id
   is used as the BullMQ job id, so re-delivering the same event does not create a
   duplicate job. When the header is absent, no event identity exists (the
   normalized payload only carries project id/name), so exact-once enqueue cannot
@@ -207,8 +211,7 @@ the project's default branch via the GitLab API on its own.
 ```bash
 curl -i -X POST http://localhost:3000/ingest \
   -H 'Content-Type: application/json' \
-  -H 'X-Gitlab-Event: Merge Request Hook' \
-  -H 'X-Gitlab-Token: <your-shared-secret-if-configured>' \
+  -H 'ingestion-token: <your-shared-secret-if-configured>' \
   -d '{
     "object_kind": "merge_request",
     "project": {
@@ -258,6 +261,7 @@ src/
 ├── knowledge/                 # KnowledgeChunk model + Context Injector
 ├── logger/                    # Pino-free logger with sensitive-key redaction
 ├── orchestrator/              # Ingestion orchestrator (full + incremental)
+├── output/                    # KnowledgeChunk JSON export (CLI --output + worker)
 ├── parsers/
 │   ├── code/                  # Tree-sitter TS/JS parser
 │   └── documentation/         # Markdown parser (unified + remark-parse)

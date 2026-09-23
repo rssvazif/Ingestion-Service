@@ -19,6 +19,10 @@ const HELP = [
   '  INGESTION_JOB_BACKOFF_JITTER    Backoff jitter 0..1 (default 0.2).',
   '  INGESTION_JOB_REMOVE_ON_COMPLETE  Completed jobs kept (default 1000).',
   '  INGESTION_JOB_REMOVE_ON_FAIL     Failed jobs kept (default 5000).',
+  '  INGESTION_OUTPUT_DIR             When set, each job\'s chunks are written as',
+  '                                   JSON into this directory (<jobId>.json).',
+  '  INGESTION_OUTPUT_FILE            Optional fixed file name for all jobs inside',
+  '                                   INGESTION_OUTPUT_DIR (default <jobId>.json).',
   '',
 ].join('\n');
 

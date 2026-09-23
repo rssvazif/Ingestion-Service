@@ -9,6 +9,7 @@ import { ConfigurationError } from '../errors/index.js';
  * @typedef {z.infer<typeof IngestionConfigSchema>} IngestionConfig
  * @typedef {z.infer<typeof BullMQJobConfigSchema>} BullMQJobConfig
  * @typedef {z.infer<typeof BullMQWorkerConfigSchema>} BullMQWorkerConfig
+ * @typedef {z.infer<typeof OutputConfigSchema>} OutputConfig
  */
 
 const GitLabHostSchema = z.object({
@@ -37,6 +38,11 @@ const BullMQWorkerConfigSchema = z.object({
   concurrency: z.number().int().positive().default(3),
 });
 
+const OutputConfigSchema = z.object({
+  dir: z.string().min(1),
+  file: z.string().min(1).optional(),
+});
+
 const IngestionConfigSchema = z.object({
   gitlab: GitLabHostSchema,
   maxFileSizeBytes: z.number().int().positive().default(2_000_000),
@@ -44,6 +50,7 @@ const IngestionConfigSchema = z.object({
   chunkOverlap: z.number().int().nonnegative().default(150),
   stateFile: z.string().min(1).default('./.ingestion-state.json'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+  output: OutputConfigSchema.optional(),
   redisUrl: z
     .string()
     .min(1, 'REDIS_URL must not be empty')
@@ -130,6 +137,14 @@ export function loadConfig(overrides) {
     chunkOverlap: readNumber('INGESTION_CHUNK_OVERLAP', 150),
     stateFile: env.INGESTION_STATE_FILE ?? './.ingestion-state.json',
     logLevel: env.LOG_LEVEL ?? 'info',
+    output: env.INGESTION_OUTPUT_DIR
+      ? {
+          dir: env.INGESTION_OUTPUT_DIR,
+          ...(env.INGESTION_OUTPUT_FILE && env.INGESTION_OUTPUT_FILE.length > 0
+            ? { file: env.INGESTION_OUTPUT_FILE }
+            : {}),
+        }
+      : undefined,
     redisUrl: env.REDIS_URL ?? 'redis://127.0.0.1:6379',
     redisDb: readNumber('REDIS_DB', 0),
     jobs: {

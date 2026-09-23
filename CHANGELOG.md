@@ -4,6 +4,27 @@ All notable changes to this repository are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Releases are versioned and grouped by change type (`feat` / `refactor` / `fix`).
 
+## [Unreleased]
+
+### feat
+
+- Chunk JSON export for the BullMQ worker: when `INGESTION_OUTPUT_DIR` is
+  set, the worker writes each job's `KnowledgeChunk[]` to a pretty-printed
+  JSON file (one `<jobId>.json` per job, or a single `INGESTION_OUTPUT_FILE`).
+  The write is atomic (temp file + rename) and skipped runs do not overwrite
+  an existing export. The shared writer (`src/output/chunk-output.js`) is
+  also used by the CLI's `--output` flag.
+
+### refactor
+
+- Webhook receiver no longer checks the `X-Gitlab-Event` header: any POST to
+  the configured path with a valid `object_kind: "merge_request"` payload is
+  accepted. The shared-secret header was renamed from `X-Gitlab-Token` to
+  `ingestion-token` (still optional, validated only when
+  `INGESTION_WEBHOOK_SECRET` is set), and the dedup headers were renamed from
+  `X-Gitlab-Event-UUID` / `X-Gitlab-Delivery-UUID` to `ingestion-event-uuid` /
+  `ingestion-delivery-uuid`.
+
 ## [0.1.0] - 2026-09-23
 
 First release of the RAG ingestion layer. The project grew from an initial

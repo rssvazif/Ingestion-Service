@@ -99,19 +99,12 @@ async function handleRequest(req, res, options, log) {
   }
 
   if (options.secret) {
-    const provided = headerValue(headers['x-gitlab-token']);
+    const provided = headerValue(headers['ingestion-token']);
     if (provided !== options.secret) {
-      log.warn('Webhook rejected: invalid or missing X-Gitlab-Token');
+      log.warn('Webhook rejected: invalid or missing ingestion-token');
       sendJson(res, 401, { error: 'unauthorized' });
       return;
     }
-  }
-
-  const eventHeader = headerValue(headers['x-gitlab-event']);
-  if (eventHeader !== 'Merge Request Hook') {
-    log.warn('Webhook rejected: wrong X-Gitlab-Event', { event: eventHeader });
-    sendJson(res, 400, { error: 'unsupported_event', event: eventHeader ?? null });
-    return;
   }
 
   let raw;

@@ -48,7 +48,7 @@ export async function runServer(argv = process.argv) {
           '  INGESTION_WEBHOOK_PORT     Port to listen on (default 3000).',
           '  INGESTION_WEBHOOK_PATH     URL path (default /ingest).',
           '  INGESTION_WEBHOOK_HOST     Bind host (default 0.0.0.0).',
-          '  INGESTION_WEBHOOK_SECRET   Optional shared secret for X-Gitlab-Token.',
+          '  INGESTION_WEBHOOK_SECRET   Optional shared secret for the ingestion-token header.',
           '  REDIS_URL                  Redis used by the BullMQ ingestion queue.',
           '  REDIS_DB                   Redis logical database index 0..15 (default 0).',
           '  INGESTION_QUEUE_NAME       Queue name (default ingestion).',

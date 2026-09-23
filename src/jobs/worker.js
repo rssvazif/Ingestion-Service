@@ -2,6 +2,7 @@ import { UnrecoverableError, Worker } from 'bullmq';
 
 import { redisConnection } from './connection.js';
 import { isRetryableError } from './errors.js';
+import { resolveChunkOutputPath, writeChunksToJson } from '../output/chunk-output.js';
 
 /**
  * @typedef {import('../config/index.js').IngestionConfig} IngestionConfig
@@ -51,9 +52,20 @@ export function createIngestionWorker({ config, log, buildOrchestrator }) {
           projectId: jobData.projectId,
         };
         const orchestrator = await buildOrchestrator(gitlab, jobData);
-        return await orchestrator.run({
+        const result = await orchestrator.run({
           repositoryId: jobData.projectId,
         });
+        if (result.mode !== 'skipped' && config.output?.dir) {
+          const outputPath = resolveChunkOutputPath(config.output, job.id);
+          if (outputPath) {
+            writeChunksToJson({
+              path: outputPath,
+              chunks: result.chunks,
+              log: jobLog,
+            });
+          }
+        }
+        return result;
       } catch (err) {
         const cause = err instanceof Error ? err : new Error(String(err));
         const retryable = isRetryableError(cause);
