@@ -17,6 +17,7 @@ const config = {
   stateFile: './x.json',
   logLevel: 'silent',
   redisUrl: 'redis://127.0.0.1:6379',
+  redisDb: 0,
   jobs: {
     queueName: 'ingestion',
     attempts: 5,

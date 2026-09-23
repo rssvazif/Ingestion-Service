@@ -50,6 +50,7 @@ export async function runServer(argv = process.argv) {
           '  INGESTION_WEBHOOK_HOST     Bind host (default 0.0.0.0).',
           '  INGESTION_WEBHOOK_SECRET   Optional shared secret for X-Gitlab-Token.',
           '  REDIS_URL                  Redis used by the BullMQ ingestion queue.',
+          '  REDIS_DB                   Redis logical database index 0..15 (default 0).',
           '  INGESTION_QUEUE_NAME       Queue name (default ingestion).',
           '  INGESTION_JOB_ATTEMPTS     Max processing attempts per job (default 5).',
           '  INGESTION_JOB_BACKOFF_DELAY    Exponential backoff base delay ms (default 5000).',
@@ -92,6 +93,7 @@ export async function runServer(argv = process.argv) {
     url: `http://${server.host}:${server.port}${server.path}`,
     queue: config.jobs.queueName,
     redisUrl: redactedRedisUrl(config.redisUrl),
+    redisDb: config.redisDb,
   });
 
   /**

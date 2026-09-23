@@ -178,7 +178,6 @@ async function handleRequest(req, res, options, log) {
     status: 'accepted',
     projectId: trigger.projectId,
     projectName: trigger.projectName ?? null,
-    jobId,
   });
 }
 

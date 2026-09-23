@@ -38,6 +38,7 @@ function makeConfig(overrides = {}) {
     stateFile: './.ingestion-state.json',
     logLevel: 'silent',
     redisUrl: '',
+    redisDb: 0,
     jobs: {
       queueName: 'ingestion',
       attempts: 3,

@@ -49,6 +49,7 @@ const IngestionConfigSchema = z.object({
     .min(1, 'REDIS_URL must not be empty')
     .url('REDIS_URL must be a valid URL')
     .default('redis://127.0.0.1:6379'),
+  redisDb: z.number().int().min(0).max(15).default(0),
   jobs: BullMQJobConfigSchema,
   worker: BullMQWorkerConfigSchema,
 });
@@ -130,6 +131,7 @@ export function loadConfig(overrides) {
     stateFile: env.INGESTION_STATE_FILE ?? './.ingestion-state.json',
     logLevel: env.LOG_LEVEL ?? 'info',
     redisUrl: env.REDIS_URL ?? 'redis://127.0.0.1:6379',
+    redisDb: readNumber('REDIS_DB', 0),
     jobs: {
       queueName: env.INGESTION_QUEUE_NAME ?? 'ingestion',
       attempts: readNumber('INGESTION_JOB_ATTEMPTS', 5),

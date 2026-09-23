@@ -6,12 +6,13 @@
  * null` is required by BullMQ so a Redis-backed command never trips ioredis'
  * default retry cap and blocks the queue.
  *
- * @param {{ redisUrl: string }} config
- * @returns {{ url: string, maxRetriesPerRequest: null }}
+ * @param {{ redisUrl: string, redisDb?: number }} config
+ * @returns {{ url: string, db: number, maxRetriesPerRequest: null }}
  */
 export function redisConnection(config) {
   return {
     url: config.redisUrl,
+    db: config.redisDb ?? 0,
     maxRetriesPerRequest: null,
   };
 }

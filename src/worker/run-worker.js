@@ -11,6 +11,7 @@ const HELP = [
   '',
   'Environment:',
   '  REDIS_URL                       Redis used by the BullMQ ingestion queue.',
+  '  REDIS_DB                        Redis logical database index 0..15 (default 0).',
   '  INGESTION_QUEUE_NAME            Queue name (default ingestion).',
   '  INGESTION_WORKER_CONCURRENCY    Jobs processed concurrently (default 3).',
   '  INGESTION_JOB_ATTEMPTS          Max processing attempts per job (default 5).',

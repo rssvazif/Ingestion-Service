@@ -25,6 +25,7 @@ const config = {
   stateFile: './.ingestion-state.json',
   logLevel: 'silent',
   redisUrl: 'redis://127.0.0.1:6379',
+  redisDb: 0,
   jobs: {
     queueName: 'ingestion',
     attempts: 2,
@@ -183,7 +184,7 @@ describe('webhook server', () => {
       projectId: '449',
       projectName: 'partServiceFileStorage',
     });
-    expect(typeof json.jobId).toBe('string');
+    expect(json).not.toHaveProperty('jobId');
 
     expect(queue.add).toHaveBeenCalledTimes(1);
     const [name, payload, opts] = queue.add.mock.calls[0];

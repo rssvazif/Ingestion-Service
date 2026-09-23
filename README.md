@@ -114,6 +114,7 @@ Stats:
 | `INGESTION_WEBHOOK_PATH`    | No       | URL path the receiver listens on (defaults to `/ingest`).              |
 | `INGESTION_WEBHOOK_SECRET`  | No       | When set, validates `X-Gitlab-Token` on every request.                |
 | `REDIS_URL`                 | No       | Redis connection string for the BullMQ queue (defaults to `redis://127.0.0.1:6379`). |
+| `REDIS_DB`                  | No       | Redis logical database index (`0..15`) for the queue keys (defaults to `0`).  |
 | `INGESTION_QUEUE_NAME`      | No       | Queue name (defaults to `ingestion`).                                 |
 | `INGESTION_WORKER_CONCURRENCY` | No    | Jobs processed concurrently per worker process (defaults to `3`).     |
 | `INGESTION_JOB_ATTEMPTS`    | No       | Max processing attempts per job before it is marked failed (defaults to `5`). |
@@ -223,10 +224,12 @@ Expected response: `HTTP/1.1 202 Accepted` with a JSON body like:
 {
   "status": "accepted",
   "projectId": "449",
-  "projectName": "partServiceFileStorage",
-  "jobId": "<bullmq-job-id>"
+  "projectName": "partServiceFileStorage"
 }
 ```
+
+The `jobId` used for deduplication is intentionally **not** part of the
+response; it is only written to the server logs.
 
 The `202` means the job was enqueued, not that ingestion has completed. If the
 queue cannot be reached the server returns `503 queue_unavailable`.
