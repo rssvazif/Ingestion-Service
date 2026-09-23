@@ -147,18 +147,14 @@ async function handleRequest(
   }
 
   log.info('Webhook accepted; scheduling ingestion', {
-    action: trigger.action,
     projectId: trigger.projectId,
-    branch: trigger.branch,
-    mergeRequestIid: trigger.mergeRequestIid,
+    projectName: trigger.projectName,
   });
 
   sendJson(res, 202, {
     status: 'accepted',
-    action: trigger.action,
     projectId: trigger.projectId,
-    branch: trigger.branch,
-    mergeRequestIid: trigger.mergeRequestIid ?? null,
+    projectName: trigger.projectName ?? null,
   });
 
   void runIngestion(options, trigger, log);
@@ -171,9 +167,7 @@ async function runIngestion(
 ): Promise<void> {
   const jobLog = log.child({
     projectId: trigger.projectId,
-    branch: trigger.branch,
-    action: trigger.action,
-    mergeRequestIid: trigger.mergeRequestIid,
+    projectName: trigger.projectName,
   });
 
   try {
@@ -183,13 +177,12 @@ async function runIngestion(
     };
     const orchestrator = await options.buildOrchestrator(gitlab, trigger);
     const result = await orchestrator.run({
-      branch: trigger.branch,
       repositoryId: trigger.projectId,
-      forceFull: trigger.forceFull ?? false,
     });
 
     jobLog.info('Ingestion finished', {
       mode: result.mode,
+      branch: result.branch,
       filesProcessed: result.stats.filesProcessed,
       filesFailed: result.stats.filesFailed,
       totalChunks: result.stats.totalChunks,

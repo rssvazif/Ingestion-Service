@@ -33,15 +33,7 @@ const config: IngestionConfig = {
 function makePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     object_kind: 'merge_request',
-    project: { id: 449, name: 'p', path_with_namespace: 'g/p' },
-    object_attributes: {
-      iid: 7,
-      target_branch: 'develop',
-      source_branch: 'feature/x',
-      action: 'merge',
-      merge_commit_sha: 'abc',
-      url: 'https://gitlab.example.com/g/p/-/merge_requests/7',
-    },
+    project: { id: 449, name: 'partServiceFileStorage' },
     ...overrides,
   };
 }
@@ -139,17 +131,27 @@ describe('webhook server', () => {
   let server: RunningWebhookServer;
   let receivedGitlab: GitLabConfig | null = null;
   let receivedTriggerProjectId: string | null = null;
+  let receivedRunOptions: unknown = null;
 
   beforeEach(async () => {
     receivedGitlab = null;
     receivedTriggerProjectId = null;
+    receivedRunOptions = null;
+    const orchestrator = stubOrchestrator();
+    const originalRun = orchestrator.run as unknown as ReturnType<typeof vi.fn>;
+    orchestrator.run = vi.fn(async (opts: unknown) => {
+      receivedRunOptions = opts;
+      return stubResult();
+    }) as unknown as typeof orchestrator.run;
+
     server = await startWith({
       buildOrchestrator: (gitlab, trigger) => {
         receivedGitlab = gitlab;
         receivedTriggerProjectId = trigger.projectId;
-        return stubOrchestrator();
+        return orchestrator;
       },
     });
+    void originalRun;
   });
 
   it('rejects requests on the wrong path with 404', async () => {
@@ -193,7 +195,7 @@ describe('webhook server', () => {
     }
   });
 
-  it('accepts a valid merge request webhook with 202 and triggers ingestion', async () => {
+  it('accepts a minimal payload with 202 and triggers ingestion', async () => {
     const res = await send(server.port, {
       method: 'POST',
       path: '/ingest',
@@ -207,10 +209,8 @@ describe('webhook server', () => {
     const json = JSON.parse(res.body);
     expect(json).toMatchObject({
       status: 'accepted',
-      action: 'merge',
       projectId: '449',
-      branch: 'develop',
-      mergeRequestIid: 7,
+      projectName: 'partServiceFileStorage',
     });
 
     await waitFor(() => receivedGitlab !== null);
@@ -218,6 +218,7 @@ describe('webhook server', () => {
     expect(receivedGitlab?.host).toBe('https://gitlab.example.com');
     expect(receivedGitlab?.token).toBe('secret');
     expect(receivedTriggerProjectId).toBe('449');
+    expect(receivedRunOptions).toEqual({ repositoryId: '449' });
   });
 
   it('routes per-project when different project ids arrive in payloads', async () => {
@@ -233,6 +234,24 @@ describe('webhook server', () => {
     expect(res.status).toBe(202);
     await waitFor(() => receivedGitlab !== null);
     expect(receivedGitlab?.projectId).toBe('999');
+    expect(receivedRunOptions).toEqual({ repositoryId: '999' });
+  });
+
+  it('accepts payloads with extra fields (e.g. object_attributes) and ignores them', async () => {
+    const res = await send(server.port, {
+      method: 'POST',
+      path: '/ingest',
+      headers: {
+        'content-type': 'application/json',
+        'x-gitlab-event': 'Merge Request Hook',
+      },
+      body: JSON.stringify(
+        makePayload({
+          object_attributes: { target_branch: 'develop', action: 'open' },
+        }),
+      ),
+    });
+    expect(res.status).toBe(202);
   });
 
   it('rejects invalid JSON with 400', async () => {

@@ -145,15 +145,52 @@ and triggers an ingestion run for each accepted event.
 | `X-Gitlab-Event`          | Yes      | Must be `Merge Request Hook`.                      |
 | `X-Gitlab-Token`          | If secret configured | Shared secret.                       |
 
-Accepted `object_attributes.action` values: `merge`, `approved`.
-
-The webhook's `object.project.id` is taken as the project id and
-`object_attributes.target_branch` is taken as the branch — neither is an
-env variable anymore. The server uses the configured `GITLAB_HOST` and
+Accepted values: any payload with `object_kind: "merge_request"` and a
+non-empty `project.id`. The server uses the configured `GITLAB_HOST` and
 `GITLAB_TOKEN` and constructs a per-request `GitLabConfig{host, token,
-projectId}` from the payload. The MR's `target_branch` is passed to the
-orchestrator; ingestion always reads the current HEAD of that branch (no
-commit pinning by default).
+projectId}` from the payload. The orchestrator resolves the project's
+default branch via the GitLab API and ingests the current HEAD of that
+branch (no commit pinning).
+
+### Triggering manually
+
+Simulate a GitLab Merge Request webhook with `curl`. The server only
+needs `object_kind` and `project.id`; the rest of GitLab's payload
+(branch, action, MR metadata, ...) is ignored. The orchestrator resolves
+the project's default branch via the GitLab API on its own.
+
+```bash
+curl -i -X POST http://localhost:3000/ingest \
+  -H 'Content-Type: application/json' \
+  -H 'X-Gitlab-Event: Merge Request Hook' \
+  -H 'X-Gitlab-Token: <your-shared-secret-if-configured>' \
+  -d '{
+    "object_kind": "merge_request",
+    "project": {
+      "id": 449,
+      "name": "partServiceFileStorage"
+    }
+  }'
+```
+
+Expected response: `HTTP/1.1 202 Accepted` with a JSON body like:
+
+```json
+{
+  "status": "accepted",
+  "projectId": "449",
+  "projectName": "partServiceFileStorage"
+}
+```
+
+Any extra fields GitLab includes (e.g. `object_attributes`) are accepted
+but ignored.
+
+Health check:
+
+```bash
+curl -i http://localhost:3000/health
+```
 
 ---
 

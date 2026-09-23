@@ -5,24 +5,11 @@ import type { NormalizedTrigger } from './types.js';
 const ProjectSchema = z.object({
   id: z.union([z.number(), z.string()]),
   name: z.string().optional(),
-  path_with_namespace: z.string().optional(),
-  web_url: z.string().optional(),
-});
-
-const ObjectAttributesSchema = z.object({
-  iid: z.number().int().positive().optional(),
-  target_branch: z.string().min(1),
-  source_branch: z.string().min(1).optional(),
-  state: z.string().optional(),
-  action: z.string().min(1),
-  merge_commit_sha: z.string().nullable().optional(),
-  url: z.string().url().optional(),
 });
 
 const MergeRequestWebhookSchema = z.object({
   object_kind: z.literal('merge_request'),
   project: ProjectSchema,
-  object_attributes: ObjectAttributesSchema,
 });
 
 export class GitLabPayloadError extends Error {
@@ -37,8 +24,6 @@ export class GitLabPayloadError extends Error {
   }
 }
 
-const ACCEPTED_ACTIONS = new Set(['merge', 'approved']);
-
 export function parseGitLabMergeRequestWebhook(body: unknown): NormalizedTrigger {
   const parsed = MergeRequestWebhookSchema.safeParse(body);
   if (!parsed.success) {
@@ -48,23 +33,10 @@ export function parseGitLabMergeRequestWebhook(body: unknown): NormalizedTrigger
     );
   }
 
-  const { project, object_attributes: attrs } = parsed.data;
+  const { project } = parsed.data;
 
-  if (!ACCEPTED_ACTIONS.has(attrs.action)) {
-    throw new GitLabPayloadError(
-      `unsupported action '${attrs.action}'; expected one of ${[...ACCEPTED_ACTIONS].join(', ')}`,
-    );
-  }
-
-  const normalized = NormalizedTriggerSchema.parse({
-    action: attrs.action,
+  return NormalizedTriggerSchema.parse({
     projectId: String(project.id),
-    branch: attrs.target_branch,
-    sourceBranch: attrs.source_branch,
-    commit: attrs.merge_commit_sha ?? undefined,
-    mergeRequestIid: attrs.iid,
-    mergeRequestUrl: attrs.url,
+    projectName: project.name,
   });
-
-  return normalized;
 }
