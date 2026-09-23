@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig } from '../config/index.js';
+import type { GitLabConfig } from '../config/index.js';
 import { getLogger } from '../logger/index.js';
 import { GitLabRepositoryAdapter } from '../repository/gitlab-adapter.js';
 import { FileClassifier } from '../discovery/file-classifier.js';
@@ -12,11 +13,13 @@ import { DocumentationChunker } from '../chunkers/documentation-chunker.js';
 import { ContextInjector } from '../knowledge/index.js';
 import { FileIngestionStateStore, IngestionStateImpl } from '../state/index.js';
 import { IngestionOrchestrator } from '../orchestrator/ingestion-orchestrator.js';
+import { ConfigurationError } from '../errors/index.js';
 
 export interface CliArgs {
   incremental?: boolean;
   forceFull?: boolean;
   branch?: string;
+  projectId?: string;
   output?: string;
   preview?: number;
 }
@@ -27,6 +30,7 @@ export function parseArgs(argv: string[]): CliArgs {
     if (raw === '--incremental') args.incremental = true;
     else if (raw === '--full' || raw === '--force-full') args.forceFull = true;
     else if (raw.startsWith('--branch=')) args.branch = raw.slice('--branch='.length);
+    else if (raw.startsWith('--project-id=')) args.projectId = raw.slice('--project-id='.length);
     else if (raw.startsWith('--output=')) args.output = raw.slice('--output='.length);
     else if (raw.startsWith('--preview=')) {
       const n = Number(raw.slice('--preview='.length));
@@ -46,9 +50,10 @@ function printHelp(): void {
       'RAG Ingestion Layer CLI',
       '',
       'Usage:',
-      '  npm run ingestion [-- --incremental] [-- --full] [-- --branch=<name>] [-- --output=<file>] [-- --preview=<n>]',
+      '  npm run ingestion -- --project-id=<id> [options]',
       '',
       'Options:',
+      '  --project-id=<id>      Numeric project id or URL-encoded path. Required.',
       '  --incremental          Run incremental ingestion only (require prior state).',
       '  --full / --force-full  Force a full ingestion even when state exists.',
       '  --branch=<name>        Override the configured branch.',
@@ -64,14 +69,26 @@ export async function runCli(argv: string[] = process.argv): Promise<number> {
   const args = parseArgs(argv);
   const config = loadConfig();
   const log = getLogger(config.logLevel);
+
+  if (!args.projectId) {
+    log.error('Missing required flag --project-id=<id>');
+    return 1;
+  }
+
+  const gitlab: GitLabConfig = {
+    ...config.gitlab,
+    projectId: args.projectId,
+  };
+
   log.info('RAG ingestion started', {
-    host: config.gitlab.host,
-    branch: config.gitlab.branch,
+    host: gitlab.host,
+    projectId: gitlab.projectId,
+    branch: args.branch,
     incremental: args.incremental === true,
     forceFull: args.forceFull === true,
   });
 
-  const adapter = new GitLabRepositoryAdapter(config.gitlab, log);
+  const adapter = new GitLabRepositoryAdapter(gitlab, log);
   const classifier = new FileClassifier({ maxFileSizeBytes: config.maxFileSizeBytes });
   const discovery = new FileDiscovery(adapter, log, { classifier });
   const state = new IngestionStateImpl(new FileIngestionStateStore(config.stateFile));
@@ -94,15 +111,21 @@ export async function runCli(argv: string[] = process.argv): Promise<number> {
     if (args.incremental) {
       result = await orchestrator.runIncremental({
         branch: args.branch,
+        repositoryId: args.projectId,
         forceFull: args.forceFull,
       });
     } else {
       result = await orchestrator.run({
         branch: args.branch,
+        repositoryId: args.projectId,
         forceFull: args.forceFull,
       });
     }
   } catch (err) {
+    if (err instanceof ConfigurationError) {
+      log.error('Configuration error', { error: err.message });
+      return 1;
+    }
     log.error('Ingestion failed', {
       error: (err as Error).message,
       code: (err as { code?: string }).code,

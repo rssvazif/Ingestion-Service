@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "ingestion": "tsx src/cli/run-ingestion.ts",
-    "ingestion:incremental": "tsx src/cli/run-ingestion.ts --incremental"
+    "ingestion:incremental": "tsx src/cli/run-ingestion.ts --incremental",
+    "ingestion:server": "tsx src/webhook/run-server.ts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

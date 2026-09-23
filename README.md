@@ -97,13 +97,14 @@ Stats:
 | --------------------------- | -------- | ------------------------------------------------------------------------ |
 | `GITLAB_HOST`               | Yes      | e.g. `https://gitlab.partcorp.ir`                                        |
 | `GITLAB_TOKEN`              | Yes      | Private token (read scope). **Never commit this.**                       |
-| `GITLAB_PROJECT_ID`         | Yes      | URL-encoded project path (e.g. `group%2Fproject`).                       |
-| `GITLAB_BRANCH`             | No       | Defaults to `develop`.                                                    |
 | `INGESTION_MAX_FILE_SIZE_BYTES` | No   | Defaults to `2000000`. Files larger than this are ignored.              |
 | `INGESTION_CHUNK_SIZE`      | No       | Reserved for future use (defaults to `1500`).                            |
 | `INGESTION_CHUNK_OVERLAP`   | No       | Reserved for future use (defaults to `150`).                             |
 | `INGESTION_STATE_FILE`      | No       | Defaults to `./.ingestion-state.json`.                                   |
 | `LOG_LEVEL`                 | No       | `debug` \| `info` \| `warn` \| `error` \| `silent`. Defaults to `info`. |
+| `INGESTION_WEBHOOK_PORT`    | No       | HTTP port for the webhook receiver (defaults to `3000`).              |
+| `INGESTION_WEBHOOK_PATH`    | No       | URL path the receiver listens on (defaults to `/ingest`).              |
+| `INGESTION_WEBHOOK_SECRET`  | No       | When set, validates `X-Gitlab-Token` on every request.                |
 
 The token is **never** logged or serialized to the state file. The logger
 redacts any value whose key matches `token`, `authorization`, `password`,
@@ -114,18 +115,45 @@ redacts any value whose key matches `token`, `authorization`, `password`,
 ## CLI
 
 ```
-npm run ingestion [-- --incremental] [-- --full] [-- --branch=<name>]
+npm run ingestion -- --project-id=<id> [-- --incremental] [-- --full] [-- --branch=<name>]
 ```
 
-| Flag                | Effect                                                                  |
-| ------------------- | ----------------------------------------------------------------------- |
-| `--incremental`     | Force incremental ingestion (requires prior state).                     |
-| `--full`            | Force a full ingestion even when state already exists.                  |
-| `--branch=<name>`   | Override the configured branch for this run.                            |
-| `--help`, `-h`      | Print the help text.                                                    |
+| Flag                  | Effect                                                                  |
+| --------------------- | ----------------------------------------------------------------------- |
+| `--project-id=<id>`   | Required. Numeric project id or URL-encoded path (`group%2Fproject`).   |
+| `--branch=<name>`     | Branch to ingest. If omitted, the project's default branch is resolved via the GitLab API. |
+| `--incremental`       | Force incremental ingestion (requires prior state).                     |
+| `--full`              | Force a full ingestion even when state already exists.                  |
+| `--help`, `-h`        | Print the help text.                                                    |
 
 Exit code: `0` on success, `1` on fatal errors, `2` when at least one file
 failed to process.
+
+---
+
+## Webhook receiver
+
+```bash
+npm run ingestion:server
+```
+
+Boots a Node `http` server that listens for GitLab Merge Request webhooks
+and triggers an ingestion run for each accepted event.
+
+| Header                    | Required | Purpose                                            |
+| ------------------------- | -------- | -------------------------------------------------- |
+| `X-Gitlab-Event`          | Yes      | Must be `Merge Request Hook`.                      |
+| `X-Gitlab-Token`          | If secret configured | Shared secret.                       |
+
+Accepted `object_attributes.action` values: `merge`, `approved`.
+
+The webhook's `object.project.id` is taken as the project id and
+`object_attributes.target_branch` is taken as the branch — neither is an
+env variable anymore. The server uses the configured `GITLAB_HOST` and
+`GITLAB_TOKEN` and constructs a per-request `GitLabConfig{host, token,
+projectId}` from the payload. The MR's `target_branch` is passed to the
+orchestrator; ingestion always reads the current HEAD of that branch (no
+commit pinning by default).
 
 ---
 

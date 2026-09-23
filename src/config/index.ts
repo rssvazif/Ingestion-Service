@@ -3,19 +3,21 @@ import { resolve } from 'node:path';
 import { z } from 'zod';
 import { ConfigurationError } from '../errors/index.js';
 
-const GitLabConfigSchema = z.object({
+const GitLabHostSchema = z.object({
   host: z
     .string()
     .min(1, 'GITLAB_HOST must not be empty')
     .url('GITLAB_HOST must be a valid URL')
     .refine((u) => /^https?:\/\//.test(u), 'GITLAB_HOST must use http(s)'),
   token: z.string().min(1, 'GITLAB_TOKEN must not be empty'),
-  projectId: z.string().min(1, 'GITLAB_PROJECT_ID must not be empty'),
-  branch: z.string().min(1, 'GITLAB_BRANCH must not be empty').default('develop'),
+});
+
+const GitLabConfigSchema = GitLabHostSchema.extend({
+  projectId: z.string().min(1),
 });
 
 const IngestionConfigSchema = z.object({
-  gitlab: GitLabConfigSchema,
+  gitlab: GitLabHostSchema,
   maxFileSizeBytes: z.number().int().positive().default(2_000_000),
   chunkSize: z.number().int().positive().default(1500),
   chunkOverlap: z.number().int().nonnegative().default(150),
@@ -23,6 +25,7 @@ const IngestionConfigSchema = z.object({
   logLevel: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 });
 
+export type GitLabHostConfig = z.infer<typeof GitLabHostSchema>;
 export type GitLabConfig = z.infer<typeof GitLabConfigSchema>;
 export type IngestionConfig = z.infer<typeof IngestionConfigSchema>;
 
@@ -71,15 +74,11 @@ export function loadConfig(overrides?: { env?: NodeJS.ProcessEnv }): IngestionCo
   const gitlabRaw = {
     host: env.GITLAB_HOST ?? '',
     token: env.GITLAB_TOKEN ?? '',
-    projectId: env.GITLAB_PROJECT_ID ?? '',
-    branch: env.GITLAB_BRANCH ?? 'develop',
   };
 
   const missing: string[] = [];
   if (!gitlabRaw.host) missing.push('GITLAB_HOST');
   if (!gitlabRaw.token) missing.push('GITLAB_TOKEN');
-  if (!gitlabRaw.projectId) missing.push('GITLAB_PROJECT_ID');
-  if (!gitlabRaw.branch) missing.push('GITLAB_BRANCH');
 
   if (missing.length > 0) {
     throw new ConfigurationError(

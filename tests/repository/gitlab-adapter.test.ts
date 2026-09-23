@@ -13,7 +13,6 @@ const config: GitLabConfig = {
   host: 'https://gitlab.example.com',
   token: 'secret-token-1234567890',
   projectId: 'group%2Fproject',
-  branch: 'main',
 };
 
 const silentLogger: Logger = {
