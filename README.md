@@ -1,8 +1,8 @@
 # RAG Ingestion Layer
 
-A TypeScript ingestion pipeline that pulls source code and documentation from
-GitLab repositories and turns them into structured `KnowledgeChunk`s ready to be
-embedded and stored in a vector database.
+A JavaScript (ESM) ingestion pipeline that pulls source code and documentation
+from GitLab repositories and turns them into structured `KnowledgeChunk`s ready
+to be embedded and stored in a vector database.
 
 This package covers **phases 1–8** of the original task: repository
 adapters, file discovery and classification, markdown & code parsing,
@@ -12,6 +12,9 @@ revision-aware ingestion state, and an orchestrator that supports both
 
 Security scanning, embedding, and the vector store are intentionally out of
 scope — the architecture leaves clean extension points for those phases.
+
+Type information is documented inline via JSDoc (`@typedef`, `@param`,
+`@returns`); no separate build step is required.
 
 ---
 
@@ -212,7 +215,7 @@ src/
 ├── repository/                # RepositoryAdapter interface + GitLab impl
 ├── security/                  # Placeholder for SecurityScanner
 └── state/                     # IngestionState + JSON file-backed store
-tests/                         # Vitest suite (175 tests)
+tests/                         # Vitest suite (175 tests, .js)
 ```
 
 ---
@@ -224,7 +227,7 @@ npm test                 # run once
 npm run test:watch       # watch mode
 ```
 
-- 175 unit tests across parsers, chunkers, classifier, GitLab adapter
+- 192 unit tests across parsers, chunkers, classifier, GitLab adapter
   (with mocked fetch), context injector, ingestion state, and end-to-end
   orchestrator scenarios (full / incremental / skipped / delete).
 - All tests are hermetic — no network calls.
@@ -233,28 +236,29 @@ npm run test:watch       # watch mode
 
 ## Output: `KnowledgeChunk`
 
-```ts
-interface KnowledgeChunk {
-  id: string;                                  // deterministic sha1
-  type: 'code' | 'documentation' | 'config' | 'delete';
-  content: string;                             // actual source / docs
+```js
+// JSDoc typedef — the canonical chunk shape produced by the pipeline.
+{
+  id: string,                                 // deterministic sha1
+  type: 'code' | 'documentation' | 'config' | 'delete',
+  content: string,                            // actual source / docs
   metadata: {
-    repositoryId: string;
-    repository: string;                        // derived short name
-    service: string;                           // derived service name
-    branch: string;
-    commit: string;
-    version?: string;
-    file: string;
-    language?: string;
-    symbol?: string;
-    symbolType?: string;
-    section?: string[];                        // heading hierarchy (docs)
-    startLine?: number;
-    endLine?: number;
-    changeType?: 'added' | 'modified' | 'deleted';
-    split?: boolean;
-  };
+    repositoryId: string,
+    repository: string,                       // derived short name
+    service: string,                          // derived service name
+    branch: string,
+    commit: string,
+    version?: string,
+    file: string,
+    language?: string,
+    symbol?: string,
+    symbolType?: string,
+    section?: string[],                       // heading hierarchy (docs)
+    startLine?: number,
+    endLine?: number,
+    changeType?: 'added' | 'modified' | 'deleted',
+    split?: boolean,
+  },
 }
 ```
 
