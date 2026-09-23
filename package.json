@@ -11,10 +11,13 @@
     "test:watch": "vitest",
     "ingestion": "node src/cli/run-ingestion.js",
     "ingestion:incremental": "node src/cli/run-ingestion.js --incremental",
-    "ingestion:server": "node src/webhook/run-server.js"
+    "ingestion:server": "node src/webhook/run-server.js",
+    "ingestion:worker": "node src/worker/run-worker.js"
   },
   "dependencies": {
+    "bullmq": "^6.3.8",
     "dotenv": "^17.4.2",
+    "ioredis": "^6.0.0",
     "jszip": "^3.10.1",
     "remark-parse": "^11.0.0",
     "tar": "^7.5.22",

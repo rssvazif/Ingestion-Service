@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { request as httpRequest } from 'node:http';
 
 import { startWebhookServer } from '../../src/webhook/server.js';
@@ -24,6 +24,18 @@ const config = {
   chunkOverlap: 150,
   stateFile: './.ingestion-state.json',
   logLevel: 'silent',
+  redisUrl: 'redis://127.0.0.1:6379',
+  jobs: {
+    queueName: 'ingestion',
+    attempts: 2,
+    backoffDelay: 100,
+    backoffJitter: 0,
+    removeOnComplete: 10,
+    removeOnFail: 10,
+  },
+  worker: {
+    concurrency: 2,
+  },
 };
 
 /**
@@ -70,36 +82,16 @@ function send(port, opts) {
   });
 }
 
-function stubOrchestrator() {
-  const run = vi.fn(async () => stubResult());
-  return { run, runFull: run, runIncremental: run };
-}
-
-function stubResult() {
-  return {
-    mode: 'full',
-    repository: { id: '449', name: 'p' },
-    branch: 'develop',
-    revision: { repositoryId: '449', commit: 'abc', branch: 'develop' },
-    previousRevision: { repositoryId: '449', commit: 'prev', branch: 'develop' },
-    jobId: 'job',
-    stats: {
-      filesDiscovered: 0,
-      filesIgnored: 0,
-      filesProcessed: 0,
-      filesFailed: 0,
-      codeChunks: 0,
-      documentationChunks: 0,
-      configChunks: 0,
-      deleteChunks: 0,
-      totalChunks: 0,
-    },
-    failures: [],
-    chunks: [],
-    durationMs: 1,
-    startedAt: new Date().toISOString(),
-    completedAt: new Date().toISOString(),
-  };
+/**
+ * Fake queue recording every enqueue. `add` returns the passed jobId when a
+ * deterministic jobId is supplied, mirroring BullMQ's deduplication (adding a
+ * job with an existing jobId returns the existing job instead of a duplicate).
+ */
+function makeQueue() {
+  const add = vi.fn(async (name, data, opts) => ({
+    id: opts?.jobId ?? `job-${Math.random().toString(36).slice(2)}`,
+  }));
+  return { add };
 }
 
 /**
@@ -112,49 +104,38 @@ async function startWith(overrides = {}) {
     path: '/ingest',
     config,
     log: silentLogger,
-    buildOrchestrator: () => stubOrchestrator(),
+    queue: makeQueue(),
     ...overrides,
   });
 }
 
 describe('webhook server', () => {
   let server;
-  let receivedGitlab = null;
-  let receivedTriggerProjectId = null;
-  let receivedRunOptions = null;
 
   beforeEach(async () => {
-    receivedGitlab = null;
-    receivedTriggerProjectId = null;
-    receivedRunOptions = null;
-    const orchestrator = stubOrchestrator();
-    const originalRun = orchestrator.run;
-    orchestrator.run = vi.fn(async (opts) => {
-      receivedRunOptions = opts;
-      return stubResult();
-    });
+    server = null;
+  });
 
-    server = await startWith({
-      buildOrchestrator: (gitlab, trigger) => {
-        receivedGitlab = gitlab;
-        receivedTriggerProjectId = trigger.projectId;
-        return orchestrator;
-      },
-    });
-    void originalRun;
+  afterEach(async () => {
+    if (server) {
+      await server.close();
+    }
   });
 
   it('rejects requests on the wrong path with 404', async () => {
+    server = await startWith();
     const res = await send(server.port, { method: 'POST', path: '/wrong' });
     expect(res.status).toBe(404);
   });
 
   it('rejects non-POST requests with 404', async () => {
+    server = await startWith();
     const res = await send(server.port, { method: 'GET', path: '/ingest' });
     expect(res.status).toBe(404);
   });
 
   it('rejects requests with the wrong X-Gitlab-Event with 400', async () => {
+    server = await startWith();
     const res = await send(server.port, {
       method: 'POST',
       path: '/ingest',
@@ -168,24 +149,7 @@ describe('webhook server', () => {
   });
 
   it('rejects requests with an invalid shared secret with 401', async () => {
-    const guarded = await startWith({ secret: 'topsecret' });
-    try {
-      const res = await send(guarded.port, {
-        method: 'POST',
-        path: '/ingest',
-        headers: {
-          'content-type': 'application/json',
-          'x-gitlab-event': 'Merge Request Hook',
-        },
-        body: JSON.stringify(makePayload()),
-      });
-      expect(res.status).toBe(401);
-    } finally {
-      await guarded.close();
-    }
-  });
-
-  it('accepts a minimal payload with 202 and triggers ingestion', async () => {
+    server = await startWith({ secret: 'topsecret' });
     const res = await send(server.port, {
       method: 'POST',
       path: '/ingest',
@@ -195,6 +159,23 @@ describe('webhook server', () => {
       },
       body: JSON.stringify(makePayload()),
     });
+    expect(res.status).toBe(401);
+  });
+
+  it('accepts a minimal payload with 202 and enqueues a job', async () => {
+    const queue = makeQueue();
+    server = await startWith({ queue });
+
+    const res = await send(server.port, {
+      method: 'POST',
+      path: '/ingest',
+      headers: {
+        'content-type': 'application/json',
+        'x-gitlab-event': 'Merge Request Hook',
+      },
+      body: JSON.stringify(makePayload()),
+    });
+
     expect(res.status).toBe(202);
     const json = JSON.parse(res.body);
     expect(json).toMatchObject({
@@ -202,17 +183,30 @@ describe('webhook server', () => {
       projectId: '449',
       projectName: 'partServiceFileStorage',
     });
+    expect(typeof json.jobId).toBe('string');
 
-    await waitFor(() => receivedGitlab !== null);
-    expect(receivedGitlab?.projectId).toBe('449');
-    expect(receivedGitlab?.host).toBe('https://gitlab.example.com');
-    expect(receivedGitlab?.token).toBe('secret');
-    expect(receivedTriggerProjectId).toBe('449');
-    expect(receivedRunOptions).toEqual({ repositoryId: '449' });
+    expect(queue.add).toHaveBeenCalledTimes(1);
+    const [name, payload, opts] = queue.add.mock.calls[0];
+    expect(name).toBe('process-ingestion');
+    expect(payload).toEqual({
+      projectId: '449',
+      projectName: 'partServiceFileStorage',
+    });
+    expect(opts.jobId).toBeUndefined();
+    expect(opts.attempts).toBe(2);
+    expect(opts.backoff).toEqual({ type: 'exponential', delay: 100 });
+    expect(opts.removeOnComplete).toEqual({ count: 10 });
+    expect(opts.removeOnFail).toEqual({ count: 10 });
+
+    // The pipeline must not run inside the HTTP handler.
+    expect(payload).not.toHaveProperty('request');
   });
 
   it('routes per-project when different project ids arrive in payloads', async () => {
-    const res = await send(server.port, {
+    const queue = makeQueue();
+    server = await startWith({ queue });
+
+    await send(server.port, {
       method: 'POST',
       path: '/ingest',
       headers: {
@@ -221,13 +215,13 @@ describe('webhook server', () => {
       },
       body: JSON.stringify(makePayload({ project: { id: 999 } })),
     });
-    expect(res.status).toBe(202);
-    await waitFor(() => receivedGitlab !== null);
-    expect(receivedGitlab?.projectId).toBe('999');
-    expect(receivedRunOptions).toEqual({ repositoryId: '999' });
+
+    expect(queue.add).toHaveBeenCalledTimes(1);
+    expect(queue.add.mock.calls[0][1]).toMatchObject({ projectId: '999' });
   });
 
   it('accepts payloads with extra fields (e.g. object_attributes) and ignores them', async () => {
+    server = await startWith();
     const res = await send(server.port, {
       method: 'POST',
       path: '/ingest',
@@ -244,7 +238,42 @@ describe('webhook server', () => {
     expect(res.status).toBe(202);
   });
 
+  it('uses the X-Gitlab-Event-UUID as a deterministic jobId for deduplication', async () => {
+    const queue = makeQueue();
+    server = await startWith({ queue });
+
+    const headers = {
+      'content-type': 'application/json',
+      'x-gitlab-event': 'Merge Request Hook',
+      'x-gitlab-event-uuid': '5f6d3c2a-0000-4a00-8000-000000000001',
+    };
+    const body = () => JSON.stringify(makePayload());
+
+    const first = await send(server.port, {
+      method: 'POST',
+      path: '/ingest',
+      headers,
+      body: body(),
+    });
+    const second = await send(server.port, {
+      method: 'POST',
+      path: '/ingest',
+      headers,
+      body: body(),
+    });
+
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(202);
+
+    expect(queue.add).toHaveBeenCalledTimes(2);
+    const firstOpts = queue.add.mock.calls[0][2];
+    const secondOpts = queue.add.mock.calls[1][2];
+    expect(firstOpts.jobId).toBe('gitlab-5f6d3c2a-0000-4a00-8000-000000000001');
+    expect(secondOpts.jobId).toBe(firstOpts.jobId);
+  });
+
   it('rejects invalid JSON with 400', async () => {
+    server = await startWith();
     const res = await send(server.port, {
       method: 'POST',
       path: '/ingest',
@@ -258,6 +287,7 @@ describe('webhook server', () => {
   });
 
   it('rejects payloads that fail schema validation with 400', async () => {
+    server = await startWith();
     const res = await send(server.port, {
       method: 'POST',
       path: '/ingest',
@@ -270,23 +300,32 @@ describe('webhook server', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 503 when the queue cannot accept the job', async () => {
+    const queue = {
+      add: vi.fn(async () => {
+        throw new Error('Redis is down');
+      }),
+    };
+    server = await startWith({ queue });
+
+    const res = await send(server.port, {
+      method: 'POST',
+      path: '/ingest',
+      headers: {
+        'content-type': 'application/json',
+        'x-gitlab-event': 'Merge Request Hook',
+      },
+      body: JSON.stringify(makePayload()),
+    });
+
+    expect(res.status).toBe(503);
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'queue_unavailable' });
+  });
+
   it('serves a health endpoint at /health', async () => {
+    server = await startWith();
     const res = await send(server.port, { method: 'GET', path: '/health' });
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toEqual({ status: 'ok' });
   });
 });
-
-/**
- * @param {() => boolean} predicate
- * @param {number} [timeoutMs]
- */
-async function waitFor(predicate, timeoutMs = 1000) {
-  const start = Date.now();
-  while (!predicate()) {
-    if (Date.now() - start > timeoutMs) {
-      throw new Error('waitFor timed out');
-    }
-    await new Promise((r) => setTimeout(r, 10));
-  }
-}

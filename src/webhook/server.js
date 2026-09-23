@@ -1,6 +1,12 @@
 import { createServer } from 'node:http';
 
-import { IngestionOrchestrator } from '../orchestrator/ingestion-orchestrator.js';
+import {
+  INGESTION_JOB_NAME,
+  buildEnqueueOptions,
+  buildJobPayload,
+  deriveJobId,
+  eventIdFromHeaders,
+} from '../jobs/index.js';
 
 import {
   GitLabPayloadError,
@@ -17,7 +23,7 @@ const MAX_BODY_BYTES = 1_048_576;
  * @property {string} [secret]
  * @property {import('../config/index.js').IngestionConfig} config
  * @property {import('../logger/index.js').Logger} log
- * @property {(gitlab: import('../config/index.js').GitLabConfig, trigger: NormalizedTrigger) => IngestionOrchestrator | Promise<IngestionOrchestrator>} buildOrchestrator
+ * @property {import('bullmq').Queue} queue
  */
 
 /**
@@ -144,55 +150,36 @@ async function handleRequest(req, res, options, log) {
     throw err;
   }
 
-  log.info('Webhook accepted; scheduling ingestion', {
+  const eventId = eventIdFromHeaders(headers);
+  const payload = buildJobPayload(trigger, { eventId });
+  const opts = buildEnqueueOptions(options.config, deriveJobId(payload));
+
+  let job;
+  try {
+    job = await options.queue.add(INGESTION_JOB_NAME, payload, opts);
+  } catch (err) {
+    log.error('Webhook accepted but failed to enqueue ingestion job', {
+      projectId: trigger.projectId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    sendJson(res, 503, { error: 'queue_unavailable' });
+    return;
+  }
+
+  const jobId = job?.id ?? opts.jobId ?? null;
+
+  log.info('Webhook accepted; ingestion job enqueued', {
     projectId: trigger.projectId,
-    projectName: trigger.projectName,
+    projectName: trigger.projectName ?? null,
+    jobId,
   });
 
   sendJson(res, 202, {
     status: 'accepted',
     projectId: trigger.projectId,
     projectName: trigger.projectName ?? null,
+    jobId,
   });
-
-  void runIngestion(options, trigger, log);
-}
-
-/**
- * @param {WebhookServerOptions} options
- * @param {NormalizedTrigger} trigger
- * @param {import('../logger/index.js').Logger} log
- */
-async function runIngestion(options, trigger, log) {
-  const jobLog = log.child({
-    projectId: trigger.projectId,
-    projectName: trigger.projectName,
-  });
-
-  try {
-    const gitlab = {
-      ...options.config.gitlab,
-      projectId: trigger.projectId,
-    };
-    const orchestrator = await options.buildOrchestrator(gitlab, trigger);
-    const result = await orchestrator.run({
-      repositoryId: trigger.projectId,
-    });
-
-    jobLog.info('Ingestion finished', {
-      mode: result.mode,
-      branch: result.branch,
-      filesProcessed: result.stats.filesProcessed,
-      filesFailed: result.stats.filesFailed,
-      totalChunks: result.stats.totalChunks,
-      durationMs: result.durationMs,
-    });
-  } catch (err) {
-    jobLog.error('Ingestion failed', {
-      error: err instanceof Error ? err.message : String(err),
-      code: err.code,
-    });
-  }
 }
 
 /**

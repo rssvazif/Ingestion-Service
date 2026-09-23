@@ -1,15 +1,6 @@
 import { loadConfig } from '../config/index.js';
 import { getLogger } from '../logger/index.js';
-import { GitLabRepositoryAdapter } from '../repository/gitlab-adapter.js';
-import { FileClassifier } from '../discovery/file-classifier.js';
-import { FileDiscovery } from '../discovery/file-discovery.js';
-import { MarkdownParser } from '../parsers/documentation/markdown-parser.js';
-import { TreeSitterCodeParser } from '../parsers/code/code-parser.js';
-import { CodeChunker } from '../chunkers/code-chunker.js';
-import { DocumentationChunker } from '../chunkers/documentation-chunker.js';
-import { ContextInjector } from '../knowledge/index.js';
-import { FileIngestionStateStore, IngestionStateImpl } from '../state/index.js';
-import { IngestionOrchestrator } from '../orchestrator/ingestion-orchestrator.js';
+import { closeQueue, createIngestionQueue } from '../jobs/index.js';
 
 import { startWebhookServer } from './server.js';
 
@@ -58,6 +49,13 @@ export async function runServer(argv = process.argv) {
           '  INGESTION_WEBHOOK_PATH     URL path (default /ingest).',
           '  INGESTION_WEBHOOK_HOST     Bind host (default 0.0.0.0).',
           '  INGESTION_WEBHOOK_SECRET   Optional shared secret for X-Gitlab-Token.',
+          '  REDIS_URL                  Redis used by the BullMQ ingestion queue.',
+          '  INGESTION_QUEUE_NAME       Queue name (default ingestion).',
+          '  INGESTION_JOB_ATTEMPTS     Max processing attempts per job (default 5).',
+          '  INGESTION_JOB_BACKOFF_DELAY    Exponential backoff base delay ms (default 5000).',
+          '  INGESTION_JOB_BACKOFF_JITTER   Backoff jitter 0..1 (default 0.2).',
+          '  INGESTION_JOB_REMOVE_ON_COMPLETE  Completed jobs kept (default 1000).',
+          '  INGESTION_JOB_REMOVE_ON_FAIL     Failed jobs kept (default 5000).',
           '',
         ].join('\n'),
       );
@@ -73,25 +71,12 @@ export async function runServer(argv = process.argv) {
   const path = envString('INGESTION_WEBHOOK_PATH', '/ingest') ?? '/ingest';
   const secret = envString('INGESTION_WEBHOOK_SECRET');
 
-  /** @type {(gitlab: import('../config/index.js').GitLabConfig) => IngestionOrchestrator} */
-  const buildOrchestrator = (gitlab) => {
-    const adapter = new GitLabRepositoryAdapter(gitlab, log);
-    const classifier = new FileClassifier({ maxFileSizeBytes: config.maxFileSizeBytes });
-    const discovery = new FileDiscovery(adapter, log, { classifier });
-    const state = new IngestionStateImpl(new FileIngestionStateStore(config.stateFile));
-    const injector = new ContextInjector();
-    return new IngestionOrchestrator({
-      adapter,
-      discovery,
-      state,
-      markdownParser: new MarkdownParser(),
-      codeParser: new TreeSitterCodeParser(),
-      documentationChunker: new DocumentationChunker(),
-      codeChunker: new CodeChunker(),
-      contextInjector: injector,
-      log,
+  const queue = createIngestionQueue(config);
+  queue.on('error', (err) => {
+    log.error('Ingestion queue error', {
+      error: err instanceof Error ? err.message : String(err),
     });
-  };
+  });
 
   const server = await startWebhookServer({
     host,
@@ -100,11 +85,13 @@ export async function runServer(argv = process.argv) {
     secret,
     config,
     log,
-    buildOrchestrator,
+    queue,
   });
 
   log.info('Webhook receiver ready', {
     url: `http://${server.host}:${server.port}${server.path}`,
+    queue: config.jobs.queueName,
+    redisUrl: redactedRedisUrl(config.redisUrl),
   });
 
   /**
@@ -119,6 +106,13 @@ export async function runServer(argv = process.argv) {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    try {
+      await closeQueue(queue);
+    } catch (err) {
+      log.error('Failed to close ingestion queue', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     process.exit(0);
   };
 
@@ -128,6 +122,20 @@ export async function runServer(argv = process.argv) {
   return new Promise(() => {
     /* long-lived server; shutdown handlers exit the process */
   });
+}
+
+/**
+ * @param {string} url
+ * @returns {string}
+ */
+function redactedRedisUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.password) parsed.password = '****';
+    return parsed.toString();
+  } catch {
+    return '<invalid> ';
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

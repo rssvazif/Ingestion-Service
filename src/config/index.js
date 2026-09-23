@@ -7,6 +7,8 @@ import { ConfigurationError } from '../errors/index.js';
  * @typedef {z.infer<typeof GitLabHostSchema>} GitLabHostConfig
  * @typedef {z.infer<typeof GitLabConfigSchema>} GitLabConfig
  * @typedef {z.infer<typeof IngestionConfigSchema>} IngestionConfig
+ * @typedef {z.infer<typeof BullMQJobConfigSchema>} BullMQJobConfig
+ * @typedef {z.infer<typeof BullMQWorkerConfigSchema>} BullMQWorkerConfig
  */
 
 const GitLabHostSchema = z.object({
@@ -22,6 +24,19 @@ const GitLabConfigSchema = GitLabHostSchema.extend({
   projectId: z.string().min(1),
 });
 
+const BullMQJobConfigSchema = z.object({
+  queueName: z.string().min(1).default('ingestion'),
+  attempts: z.number().int().positive().default(5),
+  backoffDelay: z.number().int().nonnegative().default(5000),
+  backoffJitter: z.number().nonnegative().max(1).default(0.2),
+  removeOnComplete: z.number().int().nonnegative().default(1000),
+  removeOnFail: z.number().int().nonnegative().default(5000),
+});
+
+const BullMQWorkerConfigSchema = z.object({
+  concurrency: z.number().int().positive().default(3),
+});
+
 const IngestionConfigSchema = z.object({
   gitlab: GitLabHostSchema,
   maxFileSizeBytes: z.number().int().positive().default(2_000_000),
@@ -29,6 +44,13 @@ const IngestionConfigSchema = z.object({
   chunkOverlap: z.number().int().nonnegative().default(150),
   stateFile: z.string().min(1).default('./.ingestion-state.json'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+  redisUrl: z
+    .string()
+    .min(1, 'REDIS_URL must not be empty')
+    .url('REDIS_URL must be a valid URL')
+    .default('redis://127.0.0.1:6379'),
+  jobs: BullMQJobConfigSchema,
+  worker: BullMQWorkerConfigSchema,
 });
 
 /** @type {IngestionConfig | null} */
@@ -107,6 +129,18 @@ export function loadConfig(overrides) {
     chunkOverlap: readNumber('INGESTION_CHUNK_OVERLAP', 150),
     stateFile: env.INGESTION_STATE_FILE ?? './.ingestion-state.json',
     logLevel: env.LOG_LEVEL ?? 'info',
+    redisUrl: env.REDIS_URL ?? 'redis://127.0.0.1:6379',
+    jobs: {
+      queueName: env.INGESTION_QUEUE_NAME ?? 'ingestion',
+      attempts: readNumber('INGESTION_JOB_ATTEMPTS', 5),
+      backoffDelay: readNumber('INGESTION_JOB_BACKOFF_DELAY', 5000),
+      backoffJitter: readNumber('INGESTION_JOB_BACKOFF_JITTER', 0.2),
+      removeOnComplete: readNumber('INGESTION_JOB_REMOVE_ON_COMPLETE', 1000),
+      removeOnFail: readNumber('INGESTION_JOB_REMOVE_ON_FAIL', 5000),
+    },
+    worker: {
+      concurrency: readNumber('INGESTION_WORKER_CONCURRENCY', 3),
+    },
   });
 
   if (!parsed.success) {
