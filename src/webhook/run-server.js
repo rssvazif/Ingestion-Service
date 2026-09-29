@@ -140,14 +140,10 @@ function redactedRedisUrl(url) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runServer().then(
-    () => {
-      /* server keeps the process alive; shutdown handler exits */
-    },
-    (err) => {
-      process.stderr.write(`Fatal: ${err.message}\n`);
-      process.exit(1);
-    },
-  );
-}
+runServer().then(
+  () => {},
+  (err) => {
+    process.stderr.write(`Fatal: ${err.message}\n`);
+    process.exit(1);
+  },
+);

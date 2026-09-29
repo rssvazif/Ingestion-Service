@@ -78,14 +78,10 @@ export async function runWorker(argv = process.argv) {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runWorker().then(
-    () => {
-      /* worker keeps the process alive; shutdown handler exits */
-    },
-    (err) => {
-      process.stderr.write(`Fatal: ${err.message}\n`);
-      process.exit(1);
-    },
-  );
-}
+runWorker().then(
+  () => {},
+  (err) => {
+    process.stderr.write(`Fatal: ${err.message}\n`);
+    process.exit(1);
+  },
+);

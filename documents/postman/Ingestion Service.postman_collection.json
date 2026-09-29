@@ -1,0 +1,73 @@
+{
+	"info": {
+		"_postman_id": "751cc263-8a45-40b7-9ace-1365e70ce5e6",
+		"name": "Ingestion Service",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "run Ingest",
+			"item": [
+				{
+					"name": "ingest",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-Gitlab-Event",
+								"value": "Merge Request Hook",
+								"disabled": true
+							},
+							{
+								"key": "X-Gitlab-Token",
+								"value": "<your-shared-secret-if-configured>",
+								"disabled": true
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"object_kind\": \"merge_request\",\n    \"project\": {\n      \"id\": 449,\n      \"name\": \"partServiceFileStorage\"\n    }\n  }"
+						},
+						"url": {
+							"raw": "192.168.48.244:8040/ingest",
+							"host": [
+								"192",
+								"168",
+								"48",
+								"244"
+							],
+							"port": "8040",
+							"path": [
+								"ingest"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "health",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3000/health",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"health"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

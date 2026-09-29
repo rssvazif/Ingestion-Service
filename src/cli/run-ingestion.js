@@ -222,12 +222,10 @@ function printResult(result) {
   process.stdout.write(lines.join('\n') + '\n');
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runCli().then(
-    (code) => process.exit(code),
-    (err) => {
-      process.stderr.write(`Fatal: ${err.message}\n`);
-      process.exit(1);
-    }
-  );
-}
+runCli().then(
+  () => {},
+  (err) => {
+    process.stderr.write(`Fatal: ${err.message}\n`);
+    process.exit(1);
+  },
+);
