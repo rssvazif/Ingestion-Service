@@ -1,6 +1,6 @@
 {
   "name": "rag-ingestion-layer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "RAG ingestion pipeline - repository adapter, file classification, markdown & code parsing, chunking, and KnowledgeChunk production for GitLab repositories.",
   "type": "module",

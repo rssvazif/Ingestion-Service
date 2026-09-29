@@ -6,6 +6,10 @@ Releases are versioned and grouped by change type (`feat` / `refactor` / `fix`).
 
 ## [Unreleased]
 
+### fix
+
+- change runner server, cli and woker and add postman collection 
+
 ### feat
 
 - Chunk JSON export for the BullMQ worker: when `INGESTION_OUTPUT_DIR` is
